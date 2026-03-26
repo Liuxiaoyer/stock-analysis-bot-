@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+GitHub Actions股票分析脚本
+每天自动分析持仓股票并推送到微信
+"""
+
+import os
+import json
+import requests
+from datetime import datetime
+import akshare as ak
+
+def get_stock_data(stock_codes):
+    """获取股票实时数据"""
+    print("正在获取股票数据...")
+    
+    try:
+        # 获取所有A股实时数据
+        df_all = ak.stock_zh_a_spot_em()
+        
+        results = []
+        for code in stock_codes:
+            try:
+                # 查找对应股票
+                stock_df = df_all[df_all['代码'] == code]
+                
+                if not stock_df.empty:
+                    stock = stock_df.iloc[0]
+                    
+                    stock_info = {
+                        '代码': code,
+                        '名称': stock['名称'],
+                        '最新价': float(stock['最新价']),
+                        '涨跌幅': float(stock['涨跌幅']),
+                        '涨跌额': float(stock['涨跌额']),
+                        '成交量': stock['成交量'],
+                        '成交额': stock['成交额'],
+                        '最高': float(stock['最高']),
+                        '最低': float(stock['最低']),
+                        '今开': float(stock['今开']),
+                        '昨收': float(stock['昨收']),
+                        '更新时间': datetime.now().strftime('%H:%M:%S')
+                    }
+                    results.append(stock_info)
+                    print(f"✓ 获取 {stock['名称']} 数据成功")
+                else:
+                    print(f"✗ 未找到股票 {code}")
+                    
+            except Exception as e:
+                print(f"获取股票 {code} 失败: {e}")
+        
+        return results
+        
+    except Exception as e:
+        print(f"获取数据失败: {e}")
+        return []
+
+def generate_report(stock_data):
+    """生成分析报告"""
+    print("正在生成分析报告...")
+    
+    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    report = f"""📈 【股票自动分析报告】
+⏰ 生成时间: {current_time}
+📊 数据来源: 东方财富实时行情
+========================================
+
+【市场概览】
+"""
+    
+    # 计算总体表现
+    if stock_data:
+        up_count = sum(1 for s in stock_data if s['涨跌幅'] > 0)
+        down_count = sum(1 for s in stock_data if s['涨跌幅'] < 0)
+        
+        report += f"监控股票数: {len(stock_data)} 只\n"
+        report += f"上涨: {up_count} 只 | 下跌: {down_count} 只 | 平盘: {len(stock_data)-up_count-down_count} 只\n\n"
+        
+        report += "【个股详情】\n"
+        report += "=" * 60 + "\n"
+        
+        for stock in stock_data:
+            # 表情符号
+            if stock['涨跌幅'] > 3:
+                emoji = "🚀"
+            elif stock['涨跌幅'] > 0:
+                emoji = "📈"
+            elif stock['涨跌幅'] < -3:
+                emoji = "💥"
+            elif stock['涨跌幅'] < 0:
+                emoji = "📉"
+            else:
+                emoji = "➖"
+            
+            report += f"{emoji} {stock['名称']}({stock['代码']})\n"
+            report += f"   当前价: {stock['最新价']:.2f} 元\n"
+            report += f"   涨跌幅: {stock['涨跌幅']:+.2f}% ({stock['涨跌额']:+.2f} 元)\n"
+            report += f"   今开: {stock['今开']:.2f} | 最高: {stock['最高']:.2f} | 最低: {stock['最低']:.2f}\n"
+            report += f"   成交量: {stock['成交量']} | 成交额: {stock['成交额']}\n"
+            report += "-" * 40 + "\n"
+        
+        # 分析建议
+        report += "\n【AI分析建议】\n"
+        report += "=" * 60 + "\n"
+        
+        # 简单规则分析
+        suggestions = []
+        for stock in stock_data:
+            name = stock['名称']
+            change = stock['涨跌幅']
+            
+            if change > 5:
+                suggestions.append(f"{name}: 强势上涨，关注成交量是否持续放大")
+            elif change > 2:
+                suggestions.append(f"{name}: 温和上涨，可继续持有观察")
+            elif change < -5:
+                suggestions.append(f"{name}: 大幅下跌，注意风险控制")
+            elif change < -2:
+                suggestions.append(f"{name}: 小幅调整，关注支撑位")
+            else:
+                suggestions.append(f"{name}: 震荡整理，等待方向选择")
+        
+        for i, sug in enumerate(suggestions, 1):
+            report += f"{i}. {sug}\n"
+        
+        # 市场情绪
+        avg_change = sum(s['涨跌幅'] for s in stock_data) / len(stock_data)
+        if avg_change > 1:
+            mood = "乐观"
+        elif avg_change < -1:
+            mood = "谨慎"
+        else:
+            mood = "中性"
+        
+        report += f"\n【市场情绪】: {mood} (平均涨跌幅: {avg_change:+.2f}%)\n"
+    
+    else:
+        report += "⚠️ 未能获取股票数据，请检查网络或股票代码\n"
+    
+    # 风险提示
+    report += """
+【风险提示】
+1. 本报告由AI自动生成，仅供参考
+2. 股市有风险，投资需谨慎
+3. 历史表现不代表未来收益
+4. 请结合自身情况独立决策
+
+【下次报告时间】
+• 上午 11:30
+• 下午 14:00
+• 下午 15:00
+"""
+    
+    return report
+
+def send_to_wechat(content, token):
+    """推送到微信（使用PushPlus）"""
+    if not token or token == "YOUR_PUSHPLUS_TOKEN":
+        print("未配置微信推送token，跳过推送")
+        return False
+    
+    print("正在发送到微信...")
+    
+    url = "http://www.pushplus.plus/send"
+    
+    # 提取标题
+    lines = content.split('\n')
+    title = lines[0].replace('📈 ', '') if lines else "股票分析报告"
+    
+    data = {
+        "token": token,
+        "title": f"{title} {datetime.now().strftime('%H:%M')}",
+        "content": content.replace('\n', '<br>'),
+        "template": "html",
+        "topic": "stock"  # 可选：设置分组
+    }
+    
+    try:
+        response = requests.post(url, json=data, timeout=10)
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('code') == 200:
+                print("✅ 微信推送成功")
+                return True
+            else:
+                print(f"❌ 微信推送失败: {result.get('msg')}")
+                return False
+        else:
+            print(f"❌ 请求失败: {response.status_code}")
+            return False
+    except Exception as e:
+        print(f"❌ 推送异常: {e}")
+        return False
+
+def save_report(content):
+    """保存报告到文件"""
+    filename = f"stock_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(content)
+    
+    print(f"📁 报告已保存: {filename}")
+    return filename
+
+def main():
+    """主函数"""
+    print("=" * 60)
+    print("GitHub Actions 股票分析机器人")
+    print("=" * 60)
+    
+    # 配置你的股票代码（修改这里）
+    YOUR_STOCKS = ['000001', '002594', '603688', '601318', '601567']
+    
+    # 获取环境变量
+    wechat_token = os.getenv('WECHAT_TOKEN', '')
+    deepseek_key = os.getenv('DEEPSEEK_API_KEY', '')
+    
+    # 1. 获取股票数据
+    stock_data = get_stock_data(YOUR_STOCKS)
+    
+    if not stock_data:
+        print("❌ 获取股票数据失败，程序退出")
+        return
+    
+    # 2. 生成报告
+    report = generate_report(stock_data)
+    
+    # 3. 保存报告
+    save_report(report)
+    
+    # 4. 推送到微信
+    if wechat_token:
+        send_to_wechat(report, wechat_token)
+    else:
+        print("ℹ️ 未设置WECHAT_TOKEN，跳过微信推送")
+        print("如需推送，请在GitHub仓库的Settings → Secrets中配置")
+    
+    # 5. 控制台输出（在GitHub Actions中可见）
+    print("\n" + "=" * 60)
+    print("报告内容预览:")
+    print("=" * 60)
+    print(report[:500] + "..." if len(report) > 500 else report)
+    print("=" * 60)
+    print("✅ 分析完成！")
+
+if __name__ == "__main__":
+    main()
