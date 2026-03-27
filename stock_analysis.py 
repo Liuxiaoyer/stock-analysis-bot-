@@ -194,15 +194,6 @@ def send_to_wechat(content, token):
         print(f"❌ 推送异常: {e}")
         return False
 
-#def save_report(content):
- #   """保存报告到文件"""
-  #  filename = f"stock_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-    
-    with open(filename, 'w', encoding='utf-8') as f:
- #       f.write(content)
-    
- #     print(f"📁 报告已保存: {filename}")
- #     return filename
 
 def save_report(content, file_prefix="stock_report"):
     """确保生成报告文件"""
@@ -219,7 +210,6 @@ def save_report(content, file_prefix="stock_report"):
     
     print(f"✅ 报告文件已保存: {filename}")
     return filename
-
 
 def main():
     """主函数"""
@@ -245,7 +235,18 @@ def main():
     report = generate_report(stock_data)
     
     # 3. 保存报告
-    save_report(report)
+    # 生成报告内容
+    report_content = "您的分析报告内容..."
+    
+    # 保存文件
+    report_file = save_report(report_content)
+    
+    # 同时保存一份到根目录（为了兼容旧的上传路径）
+    with open("stock_report_latest.txt", 'w', encoding='utf-8') as f:
+        f.write(report_content)
+    
+    print("✅ 额外保存了 stock_report_latest.txt")
+
     
     # 4. 推送到微信
     if wechat_token:
