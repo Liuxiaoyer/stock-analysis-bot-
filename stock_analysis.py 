@@ -194,15 +194,32 @@ def send_to_wechat(content, token):
         print(f"❌ 推送异常: {e}")
         return False
 
-def save_report(content):
-    """保存报告到文件"""
-    filename = f"stock_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+#def save_report(content):
+ #   """保存报告到文件"""
+  #  filename = f"stock_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
     
+    with open(filename, 'w', encoding='utf-8') as f:
+ #       f.write(content)
+    
+ #     print(f"📁 报告已保存: {filename}")
+ #     return filename
+
+def save_report(content, file_prefix="stock_report"):
+    """确保生成报告文件"""
+    # 确保目录存在
+    os.makedirs("reports", exist_ok=True)
+    
+    # 生成文件名
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"reports/{file_prefix}_{timestamp}.txt"
+    
+    # 写入文件
     with open(filename, 'w', encoding='utf-8') as f:
         f.write(content)
     
-    print(f"📁 报告已保存: {filename}")
+    print(f"✅ 报告文件已保存: {filename}")
     return filename
+
 
 def main():
     """主函数"""
