@@ -261,6 +261,19 @@ def main():
     print(report[:500] + "..." if len(report) > 500 else report)
     print("=" * 60)
     print("✅ 分析完成！")
+  
+# 生成报告内容
+    report_content = "您的分析报告内容..."
+    
+    # 保存文件
+    report_file = save_report(report_content)
+    
+    # 同时保存一份到根目录（为了兼容旧的上传路径）
+    with open("stock_report_latest.txt", 'w', encoding='utf-8') as f:
+        f.write(report_content)
+    
+    print("✅ 额外保存了 stock_report_latest.txt")
+
 
 if __name__ == "__main__":
     main()
