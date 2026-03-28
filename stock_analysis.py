@@ -30,8 +30,8 @@ DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 YOUR_STOCKS = [
     {'code': '000001', 'name': '平安银行'},
     {'code': '002594', 'name': '比亚迪'},
-    {'code': '600036', 'name': '招商银行'},
-    {'code': '000858', 'name': '五粮液'},
+    {'code': '603688', 'name': '石英股份'},
+    {'code': '601567', 'name': '三星医疗'},
     {'code': '601318', 'name': '中国平安'}
 ]
 
@@ -302,9 +302,6 @@ def main():
         print(f"详细错误: {traceback.format_exc()}")
         
         # 发送错误通知
-        if WECHAT_WEBHOOK_URL:
-            error_report = f"❌ 股票分析脚本执行失败\n\n错误信息: {str(e)}\n时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            send_wechat_message(error_report, "脚本执行错误")
         
         return 1
 
