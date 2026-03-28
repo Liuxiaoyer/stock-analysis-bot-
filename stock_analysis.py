@@ -1,112 +1,289 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-GitHub Actions股票分析脚本 - 修复版
+GitHub Actions股票分析脚本 - 完整版
+集成DeepSeek分析和微信推送功能
 """
 
 import os
 import sys
 import json
 import requests
-from datetime import datetime
+import pandas as pd
+import akshare as ak
+from datetime import datetime, timedelta
 import traceback
+import time
 
-# 添加详细日志
+# 配置参数
+DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+WECHAT_WEBHOOK_URL = os.getenv('WECHAT_WEBHOOK_URL', '')
+
+# 监控的股票列表（可根据需要修改）
+YOUR_STOCKS = [
+    {'code': '000001', 'name': '平安银行'},
+    {'code': '002594', 'name': '比亚迪'},
+    {'code': '600036', 'name': '招商银行'},
+    {'code': '000858', 'name': '五粮液'},
+    {'code': '601318', 'name': '中国平安'}
+]
+
 def log_error(message):
+    """记录错误日志"""
     with open("error.log", "a", encoding="utf-8") as f:
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         f.write(f"[{timestamp}] {message}\n")
     print(f"错误: {message}")
 
+def get_stock_data(stock_code):
+    """获取股票实时数据"""
+    try:
+        # 获取实时数据
+        df = ak.stock_zh_a_spot_em()
+        stock_data = df[df['代码'] == stock_code]
+        
+        if not stock_data.empty:
+            stock = stock_data.iloc[0]
+            return {
+                'code': stock_code,
+                'name': stock['名称'],
+                'price': stock['最新价'],
+                'change': stock['涨跌幅'],
+                'change_amount': stock['涨跌额'],
+                'volume': stock['成交量'],
+                'turnover': stock['成交额'],
+                'high': stock['最高'],
+                'low': stock['最低'],
+                'open': stock['今开'],
+                'close': stock['昨收']
+            }
+        return None
+    except Exception as e:
+        log_error(f"获取股票{stock_code}数据失败: {e}")
+        return None
+
+def get_historical_data(stock_code, days=30):
+    """获取股票历史数据"""
+    try:
+        # 获取历史K线数据
+        end_date = datetime.now().strftime('%Y%m%d')
+        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y%m%d')
+        
+        df = ak.stock_zh_a_hist(symbol=stock_code, period="daily", 
+                               start_date=start_date, end_date=end_date, 
+                               adjust="qfq")
+        return df
+    except Exception as e:
+        log_error(f"获取股票{stock_code}历史数据失败: {e}")
+        return None
+
+def analyze_with_deepseek(stock_data, historical_data):
+    """使用DeepSeek分析股票数据"""
+    if not DEEPSEEK_API_KEY:
+        return "DeepSeek API密钥未配置，跳过AI分析"
+    
+    try:
+        # 准备分析数据
+        analysis_prompt = f"""
+请作为专业股票分析师，对以下股票进行技术分析：
+
+股票信息：
+- 股票代码：{stock_data['code']}
+- 股票名称：{stock_data['name']}
+- 当前价格：{stock_data['price']}元
+- 涨跌幅：{stock_data['change']}%
+- 涨跌额：{stock_data['change_amount']}元
+- 成交量：{stock_data['volume']}
+- 成交额：{stock_data['turnover']}元
+- 最高价：{stock_data['high']}元
+- 最低价：{stock_data['low']}元
+- 开盘价：{stock_data['open']}元
+- 昨收价：{stock_data['close']}元
+
+近期走势关键数据（最近5个交易日）：
+{historical_data.tail()[['日期', '开盘', '收盘', '最高', '最低', '成交量']].to_string()}
+
+请从以下角度进行分析：
+1. 当前技术面状况
+2. 短期走势预测
+3. 关键支撑位和阻力位
+4. 交易建议（买入/持有/卖出）
+5. 风险提示
+
+要求分析简洁专业，不超过300字。
+"""
+        
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "deepseek-chat",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "你是一个专业的股票分析师，擅长技术分析和市场趋势判断。请用中文回答，分析要客观专业。"
+                },
+                {
+                    "role": "user",
+                    "content": analysis_prompt
+                }
+            ],
+            "temperature": 0.7,
+            "max_tokens": 1000
+        }
+        
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, 
+                                json=data, timeout=60)
+        response.raise_for_status()
+        
+        result = response.json()
+        analysis = result['choices'][0]['message']['content']
+        
+        return analysis.strip()
+        
+    except Exception as e:
+        log_error(f"DeepSeek分析失败: {e}")
+        return f"AI分析暂时不可用: {str(e)}"
+
+def send_wechat_message(message, title="股票分析报告"):
+    """发送微信消息"""
+    if not WECHAT_WEBHOOK_URL:
+        print("微信Webhook未配置，跳过推送")
+        return False
+    
+    try:
+        # 企业微信机器人格式
+        data = {
+            "msgtype": "markdown",
+            "markdown": {
+                "content": f"## {title}\n\n{message}"
+            }
+        }
+        
+        response = requests.post(WECHAT_WEBHOOK_URL, 
+                                json=data, 
+                                timeout=10)
+        response.raise_for_status()
+        
+        print("✓ 微信消息发送成功")
+        return True
+        
+    except Exception as e:
+        log_error(f"微信消息发送失败: {e}")
+        return False
+
+def generate_stock_report(stock_list):
+    """生成股票分析报告"""
+    reports = []
+    
+    for stock_info in stock_list:
+        stock_code = stock_info['code']
+        stock_name = stock_info['name']
+        
+        print(f"\n正在分析 {stock_name}({stock_code})...")
+        
+        # 获取实时数据
+        stock_data = get_stock_data(stock_code)
+        if not stock            reports.append(f"❌ {stock_name}({stock_code}): 数据获取失败")
+            continue
+        
+        # 获取历史数据
+        historical_data = get_historical_data(stock_code)
+        
+        # DeepSeek分析
+        ai_analysis = "AI分析跳过"  # 默认值
+        if DEEPSEEK_API_KEY:
+            print("正在进行AI分析...")
+            ai_analysis = analyze_with_deepseek(stock_data, historical_data)
+            time.sleep(1)  # 避免API限制
+        
+        # 生成单个股票报告
+        change_icon = "📈" if stock_data['change'] > 0 else "📉" if stock_data['change'] < 0 else "➡️"
+        
+        report = f"""
+## {stock_name} ({stock_code}) {change_icon}
+
+**实时数据：**
+- 当前价格: {stock_data['price']}元
+- 涨跌幅: {stock_data['change']}%
+- 涨跌额: {stock_data['change_amount']}元
+- 成交量: {stock_data['volume']}
+- 振幅: {((stock_data['high'] - stock_data['low']) / stock_data['close'] * 100):.2f}%
+
+**AI分析：**
+{ai_analysis}
+
+{'='*50}
+"""
+        reports.append(report)
+    
+    return "\n".join(reports)
+
 def main():
     print("=" * 60)
-    print("股票分析脚本启动")
+    print("🚀 股票分析脚本启动 - DeepSeek增强版")
     print("=" * 60)
     
     try:
-        # 1. 先测试基本环境
-        print("1. 测试Python环境...")
+        # 环境检查
+        print("1. 环境检查...")
         print(f"Python版本: {sys.version}")
-        print(f"当前目录: {os.getcwd()}")
-        print(f"文件列表: {os.listdir('.')}")
+        print(f"当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"监控股票数量: {len(YOUR_STOCKS)}")
         
-        # 2. 尝试导入模块
-        print("\n2. 测试模块导入...")
-        try:
-            import pandas as pd
-            print(f"✓ pandas版本: {pd.__version__}")
-        except ImportError as e:
-            log_error(f"pandas导入失败: {e}")
-            return 1
-            
-        try:
-            import requests
-            print(f"✓ requests版本: {requests.__version__}")
-        except ImportError as e:
-            log_error(f"requests导入失败: {e}")
-            return 1
-            
-        try:
-            import akshare as ak
-            print("✓ akshare导入成功")
-        except ImportError as e:
-            log_error(f"akshare导入失败: {e}")
-            print("尝试安装akshare...")
-            os.system("pip install akshare --upgrade")
-            try:
-                import akshare as ak
-                print("✓ akshare安装成功")
-            except:
-                log_error("akshare安装失败")
-                return 1
+        # 检查API配置
+        if not DEEPSEEK_API_KEY:
+            print("⚠️ DeepSeek API密钥未设置，AI分析功能将不可用")
+        if not WECHAT_WEBHOOK_URL:
+            print("⚠️ 微信Webhook未设置，消息推送功能将不可用")
         
-        # 3. 测试获取股票数据
-        print("\n3. 测试股票数据获取...")
-        YOUR_STOCKS = ['000001', '002594']  # 先测试两只
+        # 生成分析报告
+        print("\n2. 开始股票分析...")
+        report_content = generate_stock_report(YOUR_STOCKS)
         
-        try:
-            # 测试获取数据
-            print("正在获取股票数据...")
-            df = ak.stock_zh_a_spot_em()
-            print(f"✓ 获取成功，数据形状: {df.shape}")
-            
-            # 筛选测试股票
-            for code in YOUR_STOCKS:
-                stock_df = df[df['代码'] == code]
-                if not stock_df.empty:
-                    stock = stock_df.iloc[0]
-                    print(f"✓ {stock['名称']}({code}): {stock['最新价']}")
-                else:
-                    print(f"✗ 未找到股票: {code}")
-            
-            # 4. 生成测试报告
-            print("\n4. 生成报告...")
-            report = f"""📈 测试报告
-生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-测试股票: {YOUR_STOCKS}
-状态: ✅ 测试成功
+        # 添加报告头部
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        full_report = f"""# 📊 股票分析报告
+**生成时间:** {current_time}
+**分析股票数:** {len(YOUR_STOCKS)}
+
+{report_content}
+
+---
+*本报告由AI生成，仅供参考，不构成投资建议*
 """
-            
-            # 保存报告
-            filename = f"stock_report_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-            with open(filename, 'w', encoding='utf-8') as f:
-                f.write(report)
-            
-            print(f"✓ 报告已保存: {filename}")
-            print("\n" + "=" * 60)
-            print("✅ 脚本执行成功！")
-            print("=" * 60)
-            
-            return 0
-            
-        except Exception as e:
-            log_error(f"获取股票数据失败: {e}")
-            print(f"详细错误: {traceback.format_exc()}")
-            return 1
-            
+        
+        # 保存报告到文件
+        filename = f"stock_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(full_report)
+        print(f"✓ 报告已保存: {filename}")
+        
+        # 发送微信消息（截断前2000字符避免超限）
+        if WECHAT_WEBHOOK_URL:
+            print("\n3. 发送微信通知...")
+            short_report = full_report[:2000] + "..." if len(full_report) > 2000 else full_report
+            send_wechat_message(short_report, f"股票分析报告 {current_time}")
+        
+        print("\n" + "=" * 60)
+        print("✅ 脚本执行完成！")
+        print("=" * 60)
+        
+        return 0
+        
     except Exception as e:
-        log_error(f"脚本执行异常: {e}")
+        error_msg = f"脚本执行异常: {e}"
+        log_error(error_msg)
         print(f"详细错误: {traceback.format_exc()}")
+        
+        # 发送错误通知
+        if WECHAT_WEBHOOK_URL:
+            error_report = f"❌ 股票分析脚本执行失败\n\n错误信息: {str(e)}\n时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            send_wechat_message(error_report, "脚本执行错误")
+        
         return 1
 
 if __name__ == "__main__":
