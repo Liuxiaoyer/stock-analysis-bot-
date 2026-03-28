@@ -130,7 +130,7 @@ def analyze_with_deepseek(stock_data, historical_data):
 4. 交易建议（买入/持有/卖出）
 5. 风险提示
 
-要求分析简洁专业，不超过300字。
+要求分析简洁专业，不超过200字。
 """
         
         headers = {
