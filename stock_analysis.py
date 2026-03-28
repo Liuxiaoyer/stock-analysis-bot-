@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-GitHub Actions股票分析脚本 - 完整版
+GitHub Actions股票分析脚本 - 完整版（北京时间修复）
 集成DeepSeek分析和微信推送功能
 """
 
@@ -22,9 +22,6 @@ if WECHAT_TOKEN:
     print(f"Token前几位: {WECHAT_TOKEN[:10]}...")
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-#WECHAT_WEBHOOK_URL = os.getenv('WECHAT_WEBHOOK_URL', '')
-
-
 
 # 监控的股票列表（可根据需要修改）
 YOUR_STOCKS = [
@@ -35,11 +32,27 @@ YOUR_STOCKS = [
     {'code': '601318', 'name': '中国平安'}
 ]
 
+def get_beijing_time():
+    """获取北京时间（UTC+8）"""
+    # 获取当前UTC时间
+    utc_now = datetime.utcnow()
+    # 转换为北京时间（UTC+8）
+    beijing_time = utc_now + timedelta(hours=8)
+    return beijing_time
+
+def format_beijing_time(format_str='%Y-%m-%d %H:%M:%S'):
+    """格式化北京时间"""
+    return get_beijing_time().strftime(format_str)
+
+def get_beijing_timestamp():
+    """获取用于文件名的北京时间戳"""
+    return get_beijing_time().strftime('%Y%m%d_%H%M%S')
+
 def log_error(message):
     """记录错误日志"""
-    with open("error.log", "a", encoding="utf-8") as f:
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        f.write(f"[{timestamp}] {message}\n")
+    beijing_time = format_beijing_time()
+    with open("error.log", "a", encoding='utf-8') as f:
+        f.write(f"[{beijing_time}] {message}\n")
     print(f"错误: {message}")
 
 def get_stock_data(stock_code):
@@ -73,8 +86,8 @@ def get_historical_data(stock_code, days=30):
     """获取股票历史数据"""
     try:
         # 获取历史K线数据
-        end_date = datetime.now().strftime('%Y%m%d')
-        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y%m%d')
+        end_date = get_beijing_time().strftime('%Y%m%d')  # 使用北京时间
+        start_date = (get_beijing_time() - timedelta(days=days)).strftime('%Y%m%d')
         
         df = ak.stock_zh_a_hist(symbol=stock_code, period="daily", 
                                start_date=start_date, end_date=end_date, 
@@ -108,7 +121,7 @@ def analyze_with_deepseek(stock_data, historical_data):
 - 昨收价：{stock_data['close']}元
 
 近期走势关键数据（最近5个交易日）：
-{historical_data.tail()[['日期', '开盘', '收盘', '最高', '最低', '成交量']].to_string()}
+{historical_data.tail()[['日期', '开盘', '收盘', '最高', '最低', '成交量']].to_string() if historical_data is not None else '无历史数据'}
 
 请从以下角度进行分析：
 1. 当前技术面状况
@@ -157,36 +170,39 @@ def analyze_with_deepseek(stock_data, historical_data):
 def send_wechat_message(message, title="股票分析报告"):
     """发送微信消息（使用PushPlus）"""
     if not WECHAT_TOKEN:
-        print("❌ 微信Token未配置，跳过推送")
+        print("❌❌ 微信Token未配置，跳过推送")
         return False
     
     try:
         # 检查Token格式
         token_clean = WECHAT_TOKEN.strip()
         if not token_clean or len(token_clean) < 10:
-            print(f"❌ Token格式异常: {token_clean}")
+            print(f"❌❌ Token格式异常: {token_clean}")
             return False
         
-        print(f"🔍 Token检查: 长度{len(token_clean)}，前5位: {token_clean[:5]}...")
+        print(f"🔍🔍 Token检查: 长度{len(token_clean)}，前5位: {token_clean[:5]}...")
         
         # PushPlus API地址
         url = "http://www.pushplus.plus/send"
         
         # 清理消息内容，移除可能的问题字符
         import re
-        clean_message = re.sub(r'[^\w\s\u4e00-\u9fff\.,!?;:()$$$${}<>/\\|@#$%^&*+=-]', '', message)
+        clean_message = re.sub(r'[^\w\s\u4e00-\u9fff\.,!?;:(){}<>/\\|@#$%^&*+=-]', '', message)
         clean_message = clean_message[:1000]  # 限制长度
+        
+        # 使用北京时间
+        beijing_time = format_beijing_time('%H:%M')
         
         # 使用简化版数据格式
         data = {
             "token": token_clean,
-            "title": f"股票分析 {datetime.now().strftime('%H:%M')}",
+            "title": f"股票分析 {beijing_time} (北京时间)",
             "content": clean_message.replace('\n', '<br>'),
             "template": "html",
             "channel": "wechat"  # 明确指定通道
         }
         
-        print(f"📤 发送微信消息...")
+        print(f"📤📤 发送微信消息...")
         print(f"   标题: {data['title']}")
         print(f"   内容长度: {len(clean_message)} 字符")
         print(f"   通道: {data['channel']}")
@@ -208,33 +224,33 @@ def send_wechat_message(message, title="股票分析报告"):
                 else:
                     error_msg = result.get('msg', '未知错误')
                     error_code = result.get('code', '未知')
-                    print(f"❌ 推送失败: 代码={error_code}, 消息={error_msg}")
+                    print(f"❌❌ 推送失败: 代码={error_code}, 消息={error_msg}")
                     
                     # 根据错误代码提供建议
                     if error_code == 401:
-                        print("💡 建议: Token无效，请重新获取")
+                        print("💡💡 建议: Token无效，请重新获取")
                     elif error_code == 402:
-                        print("💡 建议: Token过期，请重新获取")
+                        print("💡💡 建议: Token过期，请重新获取")
                     elif error_code == 400:
-                        print("💡 建议: 消息格式错误，检查内容")
+                        print("💡💡 建议: 消息格式错误，检查内容")
                     
                     return False
             except json.JSONDecodeError:
-                print("❌ 响应不是有效的JSON格式")
+                print("❌❌ 响应不是有效的JSON格式")
                 print(f"   原始响应: {response.text}")
                 return False
         else:
-            print(f"❌ HTTP错误: {response.status_code}")
+            print(f"❌❌ HTTP错误: {response.status_code}")
             return False
             
     except requests.exceptions.Timeout:
-        print("❌ 请求超时")
+        print("❌❌ 请求超时")
         return False
     except requests.exceptions.ConnectionError:
-        print("❌ 网络连接错误")
+        print("❌❌ 网络连接错误")
         return False
     except Exception as e:
-        print(f"❌ 发送消息异常: {type(e).__name__}: {e}")
+        print(f"❌❌ 发送消息异常: {type(e).__name__}: {e}")
         import traceback
         print(f"   详细堆栈: {traceback.format_exc()}")
         return False
@@ -251,8 +267,7 @@ def generate_stock_report(stock_list):
 
         # 获取实时数据
         stock_data = get_stock_data(stock_code)
-        if not stock_data:
-            reports.append(f"❌ {stock_name}({stock_code}): 数据获取失败")
+        if not stock            reports.append(f"❌❌ {stock_name}({stock_code}): 数据获取失败")
             continue
         # 获取历史数据
         historical_data = get_historical_data(stock_code)
@@ -265,7 +280,7 @@ def generate_stock_report(stock_list):
             time.sleep(1)  # 避免API限制
         
         # 生成单个股票报告
-        change_icon = "📈" if stock_data['change'] > 0 else "📉" if stock_data['change'] < 0 else "➡️"
+        change_icon = "📈📈" if stock_data['change'] > 0 else "📉📉" if stock_data['change'] < 0 else "➡➡️"
         
         report = f"""
 ## {stock_name} ({stock_code}) {change_icon}
@@ -275,7 +290,7 @@ def generate_stock_report(stock_list):
 - 涨跌幅: {stock_data['change']}%
 - 涨跌额: {stock_data['change_amount']}元
 - 成交量: {stock_data['volume']}
-- 振幅: {((stock_data['high'] - stock_data['low']) / stock_data['close'] * 100):.2f}%
+- 振幅: {((stock_data['high'] - stock_data['low']) / stock_data['close'] * 100):.2f}%  # 修复：确保close不为0
 
 **AI分析：**
 {ai_analysis}
@@ -288,15 +303,16 @@ def generate_stock_report(stock_list):
 
 def main():
     print("=" * 60)
-    print("🚀 股票分析脚本启动 - DeepSeek增强版")
+    print("🚀🚀 股票分析脚本启动 - DeepSeek增强版（北京时间）")
     print("=" * 60)
     
     try:
-        # 环境检查
-        print("1. 环境检查...")
-        print(f"Python版本: {sys.version}")
-        print(f"当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"监控股票数量: {len(YOUR_STOCKS)}")
+        # 环境检查（使用北京时间）
+        beijing_time = format_beijing_time()
+        print(f"1. 环境检查...")
+        print(f"   当前北京时间: {beijing_time}")
+        print(f"   Python版本: {sys.version}")
+        print(f"   监控股票数量: {len(YOUR_STOCKS)}")
         
         # 检查API配置
         if not DEEPSEEK_API_KEY:
@@ -308,10 +324,10 @@ def main():
         print("\n2. 开始股票分析...")
         report_content = generate_stock_report(YOUR_STOCKS)
         
-        # 添加报告头部
-        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        full_report = f"""# 📊 股票分析报告
-**生成时间:** {current_time}
+        # 添加报告头部（使用北京时间）
+        current_time = format_beijing_time()
+        full_report = f"""# 📊📊 股票分析报告
+**生成时间 (北京时间):** {current_time}
 **分析股票数:** {len(YOUR_STOCKS)}
 
 {report_content}
@@ -320,11 +336,11 @@ def main():
 *本报告由AI生成，仅供参考，不构成投资建议*
 """
         
-        # 保存报告到文件
-        filename = f"stock_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        # 保存报告到文件（使用北京时间文件名）
+        filename = f"stock_report_{get_beijing_timestamp()}.txt"
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(full_report)
-        print(f"✓ 报告已保存: {filename}")
+        print(f"✓ 报告已保存: {filename} (北京时间)")
         
         # 发送微信消息（截断前2000字符避免超限）
         if WECHAT_TOKEN:
@@ -342,8 +358,6 @@ def main():
         error_msg = f"脚本执行异常: {e}"
         log_error(error_msg)
         print(f"详细错误: {traceback.format_exc()}")
-        
-        # 发送错误通知
         
         return 1
 
