@@ -20,6 +20,11 @@ DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 WECHAT_WEBHOOK_URL = os.getenv('WECHAT_WEBHOOK_URL', '')
 
+WECHAT_TOKEN = os.getenv('WECHAT_TOKEN', '')
+print(f"微信Token状态: {'已设置' if WECHAT_TOKEN else '未设置'}")
+if WECHAT_TOKEN:
+    print(f"Token前几位: {WECHAT_TOKEN[:10]}...")
+
 # 监控的股票列表（可根据需要修改）
 YOUR_STOCKS = [
     {'code': '000001', 'name': '平安银行'},
