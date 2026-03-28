@@ -267,7 +267,8 @@ def generate_stock_report(stock_list):
 
         # 获取实时数据
         stock_data = get_stock_data(stock_code)
-        if not stock            reports.append(f"❌❌ {stock_name}({stock_code}): 数据获取失败")
+        if not stock_data:
+            reports.append(f"❌❌ {stock_name}({stock_code}): 数据获取失败")
             continue
         # 获取历史数据
         historical_data = get_historical_data(stock_code)
