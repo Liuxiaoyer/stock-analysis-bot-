@@ -22,7 +22,7 @@ if WECHAT_TOKEN:
     print(f"Token前几位: {WECHAT_TOKEN[:10]}...")
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-# WECHAT_WEBHOOK_URL = os.getenv('WECHAT_WEBHOOK_URL', '')
+ WECHAT_WEBHOOK_URL = os.getenv('WECHAT_WEBHOOK_URL', '')
 
 
 
@@ -259,8 +259,8 @@ def main():
         # 检查API配置
         if not DEEPSEEK_API_KEY:
             print("⚠️ DeepSeek API密钥未设置，AI分析功能将不可用")
-        if not WECHAT_WEBHOOK_URL:
-            print("⚠️ 微信Webhook未设置，消息推送功能将不可用")
+        if not WECHAT_TOKEN:
+            print("⚠️ 微信未设置，消息推送功能将不可用")
         
         # 生成分析报告
         print("\n2. 开始股票分析...")
