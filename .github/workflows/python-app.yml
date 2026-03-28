@@ -47,7 +47,8 @@ jobs:
         WECHAT_TOKEN: ${{ secrets.WECHAT_TOKEN }}
       run: |
         echo "开始执行股票分析脚本..."
-        python stock_analysis.py
+        python $GITHUB_WORKSPACE/stock_analysis.py
+
         
         echo "执行完成后检查文件:"
         ls -la *.txt 2>/dev/null || echo "没有找到.txt文件"
