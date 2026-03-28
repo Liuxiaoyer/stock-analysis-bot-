@@ -22,7 +22,7 @@ if WECHAT_TOKEN:
     print(f"Token前几位: {WECHAT_TOKEN[:10]}...")
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-WECHAT_WEBHOOK_URL = os.getenv('WECHAT_WEBHOOK_URL', '')
+# WECHAT_WEBHOOK_URL = os.getenv('WECHAT_WEBHOOK_URL', '')
 
 
 
