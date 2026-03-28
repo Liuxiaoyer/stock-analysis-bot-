@@ -28,10 +28,10 @@ DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
 # 监控的股票列表（可根据需要修改）
 YOUR_STOCKS = [
-   # {'code': '000001', 'name': '平安银行'},
-   # {'code': '002594', 'name': '比亚迪'},
-   # {'code': '603688', 'name': '石英股份'},
-   # {'code': '601567', 'name': '三星医疗'},
+    {'code': '000001', 'name': '平安银行'},
+    {'code': '002594', 'name': '比亚迪'},
+    {'code': '603688', 'name': '石英股份'},
+    {'code': '601567', 'name': '三星医疗'},
     {'code': '601318', 'name': '中国平安'}
 ]
 
