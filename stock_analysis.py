@@ -155,32 +155,48 @@ def analyze_with_deepseek(stock_data, historical_data):
         return f"AI分析暂时不可用: {str(e)}"
 
 def send_wechat_message(message, title="股票分析报告"):
-    """发送微信消息"""
-    if not WECHAT_WEBHOOK_URL:
-        print("微信Webhook未配置，跳过推送")
+    """发送微信消息（使用PushPlus）"""
+    if not WECHAT_TOKEN:
+        print("微信Token未配置，跳过推送")
         return False
     
     try:
-        # 企业微信机器人格式
+        # PushPlus API格式
+        url = "http://www.pushplus.plus/send"
+        
         data = {
-            "msgtype": "markdown",
-            "markdown": {
-                "content": f"## {title}\n\n{message}"
-            }
+            "token": WECHAT_TOKEN,  # 使用PushPlus的token
+            "title": title,
+            "content": message.replace('\n', '<br>'),  # 将换行符转换为HTML换行
+            "template": "html",  # 使用HTML模板
+            "topic": "stock"  # 可选：消息分组
         }
         
-        response = requests.post(WECHAT_WEBHOOK_URL, 
-                                json=data, 
-                                timeout=10)
-        response.raise_for_status()
+        print(f"正在发送微信消息，标题: {title}")
+        print(f"消息内容长度: {len(message)} 字符")
         
-        print("✓ 微信消息发送成功")
-        return True
+        response = requests.post(url, json=data, timeout=10)
+        print(f"HTTP状态码: {response.status_code}")
         
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('code') == 200:
+                print("✅ 微信消息发送成功！")
+                return True
+            else:
+                error_msg = result.get('msg', '未知错误')
+                print(f"❌ 推送失败: {error_msg}")
+                return False
+        else:
+            print(f"❌ HTTP请求失败: {response.status_code}")
+            print(f"响应内容: {response.text[:200]}")
+            return False
+            
     except Exception as e:
         log_error(f"微信消息发送失败: {e}")
+        print(f"详细错误: {traceback.format_exc()}")
         return False
-
+        
 def generate_stock_report(stock_list):
     """生成股票分析报告"""
     reports = []
