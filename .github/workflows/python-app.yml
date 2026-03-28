@@ -13,7 +13,9 @@ env:
   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'  # 暂时允许使用Node.js 20
   # 或者使用更新的Node.js版本（推荐）
   # NODE_VERSION: '20.x'
-
+  DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+  WECHAT_WEBHOOK_URL: ${{ secrets.WECHAT_WEBHOOK_URL }}
+  
 jobs:
   analyze-stocks:
     runs-on: ubuntu-latest
