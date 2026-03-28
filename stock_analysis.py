@@ -22,7 +22,7 @@ if WECHAT_TOKEN:
     print(f"Token前几位: {WECHAT_TOKEN[:10]}...")
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
- #  WECHAT_WEBHOOK_URL = os.getenv('WECHAT_WEBHOOK_URL', '')
+  WECHAT_WEBHOOK_URL = os.getenv('WECHAT_WEBHOOK_URL', '')
 
 
 
@@ -285,7 +285,7 @@ def main():
         print(f"✓ 报告已保存: {filename}")
         
         # 发送微信消息（截断前2000字符避免超限）
-        if WECHAT_WEBHOOK_URL:
+        if WECHAT_TOKEN:
             print("\n3. 发送微信通知...")
             short_report = full_report[:2000] + "..." if len(full_report) > 2000 else full_report
             send_wechat_message(short_report, f"股票分析报告 {current_time}")
