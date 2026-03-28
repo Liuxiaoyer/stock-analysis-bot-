@@ -16,22 +16,7 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v4
 
- # 2. 显示详细的目录信息
-    - name: 显示环境信息
-      run: |
-        echo "=== 环境变量 ==="
-        echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
-        echo "GITHUB_REPOSITORY: $GITHUB_REPOSITORY"
-        echo ""
-        echo "=== 当前目录 ==="
-        pwd
-        echo ""
-        echo "=== 目录结构 ==="
-        ls -la
-        echo ""
-        echo "=== 查找Python脚本 ==="
-        find . -name "*.py" -type f 2>/dev/null
-        
+ 
     # 2. 详细调试：检查文件和权限
     - name: 详细文件检查
       run: |
