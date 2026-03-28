@@ -15,6 +15,38 @@ jobs:
     # 1. 检出代码
     - name: 检出代码
       uses: actions/checkout@v4
+
+
+    # 2. 详细调试：检查文件和权限
+    - name: 详细文件检查
+      run: |
+        echo "=== 当前目录 ==="
+        pwd
+        echo ""
+        echo "=== 完整文件列表 ==="
+        ls -la
+        echo ""
+        echo "=== 检查文件类型 ==="
+        for file in stock_analysis.py requirements.txt; do
+          if [ -f "$file" ]; then
+            echo "✅ $file 存在"
+            echo "   权限: $(ls -la $file | awk '{print $1}')"
+            echo "   大小: $(wc -l < $file) 行"
+            echo "   编码: $(file -bi $file)"
+            echo "   前3行:"
+            head -3 "$file" || echo "   无法读取"
+          else
+            echo "❌ $file 不存在"
+          fi
+          echo ""
+        done
+        
+        echo "=== 尝试执行Python脚本 ==="
+        python -c "print('Python测试: 成功')" && echo "✅ Python可用"
+        
+        echo "=== 检查Python脚本语法 ==="
+        python -m py_compile stock_analysis.py 2>/dev/null && echo "✅ 语法正确" || echo "❌ 语法错误"
+
     
     # 2. 设置Python环境
     - name: 设置Python
