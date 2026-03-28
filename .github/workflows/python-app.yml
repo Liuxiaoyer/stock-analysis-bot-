@@ -61,18 +61,7 @@ jobs:
         pip install requests pandas -i https://pypi.tuna.tsinghua.edu.cn/simple
         pip install akshare --upgrade -i https://pypi.tuna.tsinghua.edu.cn/simple
     
-    # 4. 显示当前目录结构
-    - name: 检查目录结构
-      run: |
-        echo "当前目录:"
-        pwd
-        echo ""
-        echo "文件列表:"
-        ls -la
-        echo ""
-        echo "Python脚本内容前10行:"
-        head -20 stock_analysis.py || echo "未找到stock_analysis.py"
-    
+   
     # 5. 运行股票分析脚本
     - name: 运行股票分析
       env:
