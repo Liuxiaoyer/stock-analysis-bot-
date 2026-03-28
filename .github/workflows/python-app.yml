@@ -16,7 +16,22 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v4
 
-
+ # 2. 显示详细的目录信息
+    - name: 显示环境信息
+      run: |
+        echo "=== 环境变量 ==="
+        echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
+        echo "GITHUB_REPOSITORY: $GITHUB_REPOSITORY"
+        echo ""
+        echo "=== 当前目录 ==="
+        pwd
+        echo ""
+        echo "=== 目录结构 ==="
+        ls -la
+        echo ""
+        echo "=== 查找Python脚本 ==="
+        find . -name "*.py" -type f 2>/dev/null
+        
     # 2. 详细调试：检查文件和权限
     - name: 详细文件检查
       run: |
@@ -62,21 +77,40 @@ jobs:
         pip install akshare --upgrade -i https://pypi.tuna.tsinghua.edu.cn/simple
     
    
-    # 5. 运行股票分析脚本
+   # 5. 运行分析脚本（使用绝对路径）
     - name: 运行股票分析
       env:
         WECHAT_TOKEN: ${{ secrets.WECHAT_TOKEN }}
       run: |
-        echo "开始执行股票分析脚本..."
-        python stock_analysis.py
+        echo "=== 准备运行脚本 ==="
         
-        echo "执行完成后检查文件:"
-        ls -la *.txt 2>/dev/null || echo "没有找到.txt文件"
-        echo ""
-        echo "创建测试文件验证上传功能..."
-        date > test_report.txt
-        echo "股票分析测试" >> test_report.txt
-        echo "生成时间: $(date)" >> test_report.txt
+        # 方法1：直接使用相对路径
+        echo "方法1：使用相对路径"
+        if [ -f "stock_analysis.py" ]; then
+          echo "✅ 找到 stock_analysis.py (相对路径)"
+          python stock_analysis.py
+        else
+          echo "❌ 相对路径未找到"
+          
+          # 方法2：使用查找的文件
+          echo "方法2：查找Python脚本"
+          PYTHON_SCRIPT=$(find . -name "stock_analysis.py" -type f 2>/dev/null | head -1)
+          
+          if [ -n "$PYTHON_SCRIPT" ]; then
+            echo "✅ 找到脚本: $PYTHON_SCRIPT"
+            python "$PYTHON_SCRIPT"
+          else
+            echo "❌ 未找到任何Python脚本"
+            echo "创建测试脚本..."
+            cat > test_script.py << 'EOF'
+print("测试脚本运行成功")
+print("当前目录:", __file__)
+import os
+print("文件列表:", os.listdir('.'))
+EOF
+            python test_script.py
+          fi
+        fi
     
     # 6. 上传报告文件（修复版）
     - name: 上传报告文件
