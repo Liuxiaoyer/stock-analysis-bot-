@@ -157,44 +157,86 @@ def analyze_with_deepseek(stock_data, historical_data):
 def send_wechat_message(message, title="股票分析报告"):
     """发送微信消息（使用PushPlus）"""
     if not WECHAT_TOKEN:
-        print("微信Token未配置，跳过推送")
+        print("❌ 微信Token未配置，跳过推送")
         return False
     
     try:
-        # PushPlus API格式
+        # 检查Token格式
+        token_clean = WECHAT_TOKEN.strip()
+        if not token_clean or len(token_clean) < 10:
+            print(f"❌ Token格式异常: {token_clean}")
+            return False
+        
+        print(f"🔍 Token检查: 长度{len(token_clean)}，前5位: {token_clean[:5]}...")
+        
+        # PushPlus API地址
         url = "http://www.pushplus.plus/send"
         
+        # 清理消息内容，移除可能的问题字符
+        import re
+        clean_message = re.sub(r'[^\w\s\u4e00-\u9fff\.,!?;:()$$$${}<>/\\|@#$%^&*+=-]', '', message)
+        clean_message = clean_message[:1000]  # 限制长度
+        
+        # 使用简化版数据格式
         data = {
-            "token": WECHAT_TOKEN,  # 使用PushPlus的token
-            "title": title,
-            "content": message.replace('\n', '<br>'),  # 将换行符转换为HTML换行
-            "template": "html",  # 使用HTML模板
-            "topic": "stock"  # 可选：消息分组
+            "token": token_clean,
+            "title": f"股票分析 {datetime.now().strftime('%H:%M')}",
+            "content": clean_message.replace('\n', '<br>'),
+            "template": "html",
+            "channel": "wechat"  # 明确指定通道
         }
         
-        print(f"正在发送微信消息，标题: {title}")
-        print(f"消息内容长度: {len(message)} 字符")
+        print(f"📤 发送微信消息...")
+        print(f"   标题: {data['title']}")
+        print(f"   内容长度: {len(clean_message)} 字符")
+        print(f"   通道: {data['channel']}")
         
-        response = requests.post(url, json=data, timeout=10)
-        print(f"HTTP状态码: {response.status_code}")
+        # 发送请求
+        response = requests.post(url, json=data, timeout=15)
+        print(f"   HTTP状态码: {response.status_code}")
+        print(f"   响应内容: {response.text}")
         
+        # 解析响应
         if response.status_code == 200:
-            result = response.json()
-            if result.get('code') == 200:
-                print("✅ 微信消息发送成功！")
-                return True
-            else:
-                error_msg = result.get('msg', '未知错误')
-                print(f"❌ 推送失败: {error_msg}")
+            try:
+                result = response.json()
+                print(f"   JSON响应: {result}")
+                
+                if result.get('code') == 200:
+                    print("✅ 微信消息发送成功！")
+                    return True
+                else:
+                    error_msg = result.get('msg', '未知错误')
+                    error_code = result.get('code', '未知')
+                    print(f"❌ 推送失败: 代码={error_code}, 消息={error_msg}")
+                    
+                    # 根据错误代码提供建议
+                    if error_code == 401:
+                        print("💡 建议: Token无效，请重新获取")
+                    elif error_code == 402:
+                        print("💡 建议: Token过期，请重新获取")
+                    elif error_code == 400:
+                        print("💡 建议: 消息格式错误，检查内容")
+                    
+                    return False
+            except json.JSONDecodeError:
+                print("❌ 响应不是有效的JSON格式")
+                print(f"   原始响应: {response.text}")
                 return False
         else:
-            print(f"❌ HTTP请求失败: {response.status_code}")
-            print(f"响应内容: {response.text[:200]}")
+            print(f"❌ HTTP错误: {response.status_code}")
             return False
             
+    except requests.exceptions.Timeout:
+        print("❌ 请求超时")
+        return False
+    except requests.exceptions.ConnectionError:
+        print("❌ 网络连接错误")
+        return False
     except Exception as e:
-        log_error(f"微信消息发送失败: {e}")
-        print(f"详细错误: {traceback.format_exc()}")
+        print(f"❌ 发送消息异常: {type(e).__name__}: {e}")
+        import traceback
+        print(f"   详细堆栈: {traceback.format_exc()}")
         return False
         
 def generate_stock_report(stock_list):
