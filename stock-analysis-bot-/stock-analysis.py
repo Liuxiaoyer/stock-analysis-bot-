@@ -1,0 +1,68 @@
+name: 每日股票分析
+
+on:
+  schedule:
+    # 交易日运行时间（UTC时间）
+    # 北京时间 9:30, 11:30, 14:00, 15:00
+    - cron: '30 1,3,6,7 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  analyze-stocks:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. 检出代码
+    - name: 检出代码
+      uses: actions/checkout@v4
+    
+    # 2. 设置Python环境
+    - name: 设置Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    # 3. 安装依赖（使用清华镜像加速）
+    - name: 安装依赖
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pandas -i https://pypi.tuna.tsinghua.edu.cn/simple
+        pip install akshare --upgrade -i https://pypi.tuna.tsinghua.edu.cn/simple
+    
+    # 4. 显示当前目录结构
+    - name: 检查目录结构
+      run: |
+        echo "当前目录:"
+        pwd
+        echo ""
+        echo "文件列表:"
+        ls -la
+        echo ""
+        echo "Python脚本内容前10行:"
+        head -20 stock_analysis.py || echo "未找到stock_analysis.py"
+    
+    # 5. 运行股票分析脚本
+    - name: 运行股票分析
+      env:
+        WECHAT_TOKEN: ${{ secrets.WECHAT_TOKEN }}
+      run: |
+        echo "开始执行股票分析脚本..."
+        python stock_analysis.py
+        
+        echo "执行完成后检查文件:"
+        ls -la *.txt 2>/dev/null || echo "没有找到.txt文件"
+        echo ""
+        echo "创建测试文件验证上传功能..."
+        date > test_report.txt
+        echo "股票分析测试" >> test_report.txt
+        echo "生成时间: $(date)" >> test_report.txt
+    
+    # 6. 上传报告文件（修复版）
+    - name: 上传报告文件
+      uses: actions/upload-artifact@v4
+      with:
+        name: stock-reports
+        path: |
+          stock_report_*.txt
+          test_report.txt
+        if-no-files-found: warn  # 如果没有文件，只警告不失败
