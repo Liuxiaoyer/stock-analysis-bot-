@@ -11,7 +11,7 @@ env:
 
 jobs:
   analyze-stocks:
-   permissions: # <--- 新添加的权限块
+    permissions: # <--- 新添加的权限块
       contents: write
     runs-on: ubuntu-latest  
     steps:
