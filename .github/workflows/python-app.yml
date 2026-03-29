@@ -11,8 +11,9 @@ env:
 
 jobs:
   analyze-stocks:
-    runs-on: ubuntu-latest
-    
+   permissions: # <--- 新添加的权限块
+      contents: write
+    runs-on: ubuntu-latest  
     steps:
     # 1. 检出代码
     - name: 检出代码
