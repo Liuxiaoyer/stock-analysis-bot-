@@ -2,18 +2,13 @@ name: 每日股票分析
 
 on:
   schedule:
-    # 交易日运行时间（UTC时间，比北京时间晚8小时）
-    # 对应北京时间：9:30, 11:30, 14:00, 15:00
     - cron: '30 1,3,7 * * 1-5'
-  # 手动触发
   workflow_dispatch:
 
 env:
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
   DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
   WECHAT_TOKEN: ${{ secrets.WECHAT_TOKEN }}
-  WECHAT_WEBHOOK_URL: ${{ secrets.WECHAT_WEBHOOK_URL }}
-  
+
 jobs:
   analyze-stocks:
     runs-on: ubuntu-latest
@@ -25,7 +20,7 @@ jobs:
     
     # 2. 设置Python环境
     - name: 设置Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v4
       with:
         python-version: '3.10'
     
@@ -33,115 +28,102 @@ jobs:
     - name: 安装依赖
       run: |
         python -m pip install --upgrade pip
-        pip install requests pandas markdown
-        pip install akshare --upgrade
+        pip install requests pandas akshare
     
     # 4. 运行股票分析
     - name: 运行股票分析
-      env:
-        WECHAT_TOKEN: ${{ secrets.WECHAT_TOKEN }}
-        GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
         echo "开始运行股票分析脚本..."
-        if [ -f "stock_analysis.py" ]; then
-          python stock_analysis.py
+        python stock_analysis.py
+        
+        echo "=== 生成的文件 ==="
+        ls -la *.html *.txt 2>/dev/null || echo "未找到报告文件"
+    
+    # 5. 准备GitHub Pages文件（修复版）
+    - name: 准备Pages文件
+      run: |
+        echo "开始准备GitHub Pages..."
+        
+        # 创建发布目录
+        mkdir -p docs
+        
+        # 查找最新的HTML报告
+        echo "查找HTML报告文件..."
+        
+        # 查找HTML文件，处理找不到文件的情况
+        HTML_FILES=$(find . -maxdepth 1 -name "stock_report_*.html" -type f 2>/dev/null | wc -l)
+        
+        if [ "$HTML_FILES" -gt 0 ]; then
+          # 找到HTML文件，复制到发布目录
+          LATEST_HTML=$(ls -t stock_report_*.html | head -1)
+          echo "找到HTML报告: $LATEST_HTML"
+          
+          cp "$LATEST_HTML" docs/index.html
+          
+          echo "✅ 已准备HTML报告: $LATEST_HTML"
         else
-          echo "错误：找不到stock_analysis.py文件"
-          exit 1
+          echo "⚠️ 未找到HTML报告文件，创建简单页面"
+          
+          # 使用简单的echo命令创建页面
+          echo '<!DOCTYPE html>' > docs/index.html
+          echo '<html><head><title>股票分析报告</title>' >> docs/index.html
+          echo '<style>body{font-family:Arial;margin:40px}h1{color:#333}</style>' >> docs/index.html
+          echo '</head><body>' >> docs/index.html
+          echo '<h1>📊 股票分析报告</h1>' >> docs/index.html
+          echo '<p>报告正在生成中，请稍后刷新页面...</p>' >> docs/index.html
+          echo '<p><small>生成时间: '$(date)'</small></p>' >> docs/index.html
+          echo '</body></html>' >> docs/index.html
+          
+          echo "✅ 简单页面已创建"
         fi
-# 5. 准备GitHub Pages文件（使用echo命令）
-- name: 准备Pages文件
-  run: |
-    echo "开始准备GitHub Pages..."
+        
+        echo "=== docs目录内容 ==="
+        ls -la docs/
     
-    # 创建发布目录
-    mkdir -p docs
-    
-    # 查找最新的HTML报告
-    echo "查找HTML报告文件..."
-    
-    if find . -name "stock_report_*.html" -type f | grep -q .; then
-      # 找到HTML文件，复制到发布目录
-      LATEST_HTML=$(find . -name "stock_report_*.html" -type f | sort -r | head -1)
-      echo "找到HTML报告: $LATEST_HTML"
-      
-      cp "$LATEST_HTML" docs/index.html
-      
-      # 检查是否需要单独的CSS
-      if [ -f "style.css" ]; then
-        cp style.css docs/
-        echo "复制了style.css"
-      fi
-      
-      echo "✅ 已准备HTML报告: $LATEST_HTML"
-    else
-      # 没有HTML文件，使用echo创建占位页面
-      echo "未找到HTML报告，创建占位页面"
-      
-      # 使用echo命令创建HTML文件
-      echo '<!DOCTYPE html>' > docs/index.html
-      echo '<html>' >> docs/index.html
-      echo '<head>' >> docs/index.html
-      echo '    <title>股票分析报告</title>' >> docs/index.html
-      echo '    <style>' >> docs/index.html
-      echo '        body { ' >> docs/index.html
-      echo '            font-family: Arial, sans-serif; ' >> docs/index.html
-      echo '            margin: 40px; ' >> docs/index.html
-      echo '            line-height: 1.6;' >> docs/index.html
-      echo '            background-color: #f5f5f5;' >> docs/index.html
-      echo '        }' >> docs/index.html
-      echo '        .container {' >> docs/index.html
-      echo '            max-width: 800px;' >> docs/index.html
-      echo '            margin: 0 auto;' >> docs/index.html
-      echo '            background: white;' >> docs/index.html
-      echo '            padding: 30px;' >> docs/index.html
-      echo '            border-radius: 10px;' >> docs/index.html
-      echo '            box-shadow: 0 2px 10px rgba(0,0,0,0.1);' >> docs/index.html
-      echo '        }' >> docs/index.html
-      echo '        h1 { color: #333; }' >> docs/index.html
-      echo '        .status {' >> docs/index.html
-      echo '            padding: 15px;' >> docs/index.html
-      echo '            background: #e8f4fd;' >> docs/index.html
-      echo '            border-left: 4px solid #2196F3;' >> docs/index.html
-      echo '            margin: 20px 0;' >> docs/index.html
-      echo '        }' >> docs/index.html
-      echo '        .info {' >> docs/index.html
-      echo '            color: #666;' >> docs/index.html
-      echo '            font-size: 0.9em;' >> docs/index.html
-      echo '        }' >> docs/index.html
-      echo '    </style>' >> docs/index.html
-      echo '</head>' >> docs/index.html
-      echo '<body>' >> docs/index.html
-      echo '    <div class="container">' >> docs/index.html
-      echo '        <h1>📊 股票分析报告</h1>' >> docs/index.html
-      echo '        <div class="status">' >> docs/index.html
-      echo '            <p><strong>状态:</strong> 报告正在生成中...</p>' >> docs/index.html
-      echo '            <p>GitHub Actions 正在自动生成最新的股票分析报告。</p>' >> docs/index.html
-      echo '            <p>通常这需要几分钟时间，请稍后刷新页面。</p>' >> docs/index.html
-      echo '        </div>' >> docs/index.html
-      echo '        <div class="info">' >> docs/index.html
-      echo '            <p><strong>最后检查时间:</strong> '$(date)'</p>' >> docs/index.html
-      echo '            <p><strong>注意:</strong> 如果没有自动刷新，请手动重新运行工作流。</p>' >> docs/index.html
-      echo '        </div>' >> docs/index.html
-      echo '    </div>' >> docs/index.html
-      echo '</body>' >> docs/index.html
-      echo '</html>' >> docs/index.html
-      
-      echo "✅ 占位页面已创建"
-    fi
-    
-    # 列出生成的页面
-    echo "=== docs目录内容 ==="
-    ls -la docs/
     # 6. 部署到GitHub Pages
     - name: 部署到GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./docs
+        publish_branch: gh-pages
         keep_files: false
     
-    # 7. 上传报告文件（用于调试）
+    # 7. 发送微信通知
+    - name: 发送微信通知
+      if: success()
+      env:
+        WECHAT_TOKEN: ${{ secrets.WECHAT_TOKEN }}
+      run: |
+        echo "准备发送微信通知..."
+        
+        # 获取仓库信息
+        REPO_NAME="${{ github.repository }}"
+        USER_NAME=$(echo "$REPO_NAME" | cut -d'/' -f1)
+        REPO_NAME_ONLY=$(echo "$REPO_NAME" | cut -d'/' -f2)
+        
+        # 构建GitHub Pages链接
+        PAGES_URL="https://${USER_NAME}.github.io/${REPO_NAME_ONLY}/"
+        
+        echo "GitHub Pages链接: $PAGES_URL"
+        
+        # 发送微信消息
+        if [ -n "$WECHAT_TOKEN" ]; then
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"token\": \"$WECHAT_TOKEN\",
+              \"title\": \"📈 股票分析报告已发布\",
+              \"content\": \"股票分析报告已生成并发布到GitHub Pages<br><br>🔗 查看地址: <a href='$PAGES_URL'>$PAGES_URL</a><br><br>点击链接查看完整分析报告\",
+              \"template\": \"html\"
+            }" \
+            "http://www.pushplus.plus/send"
+          echo "✅ 微信通知已发送"
+        else
+          echo "⚠️ 未设置WECHAT_TOKEN，跳过微信通知"
+        fi
+    
+    # 8. 上传报告文件（用于调试）
     - name: 上传报告文件
       if: always()
       uses: actions/upload-artifact@v4
@@ -150,4 +132,4 @@ jobs:
         path: |
           stock_report_*.*
           *.log
-          error.log
+        retention-days: 7
