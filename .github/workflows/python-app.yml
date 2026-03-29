@@ -49,92 +49,90 @@ jobs:
           echo "错误：找不到stock_analysis.py文件"
           exit 1
         fi
+# 5. 准备GitHub Pages文件（使用echo命令）
+- name: 准备Pages文件
+  run: |
+    echo "开始准备GitHub Pages..."
     
-    # 5. 准备GitHub Pages文件（直接使用现有HTML）
-    - name: 准备Pages文件
-      run: |
-        echo "开始准备GitHub Pages..."
-        
-        # 创建发布目录
-        mkdir -p _site
-        
-        # 查找最新的HTML报告
-        echo "查找HTML报告文件..."
-        if ls stock_report_*.html 1> /dev/null 2>&1; then
-          # 找到HTML文件，复制到发布目录
-          LATEST_HTML=$(ls -t stock_report_*.html | head -1)
-          echo "找到HTML报告: $LATEST_HTML"
-          
-          cp "$LATEST_HTML" _site/index.html
-          
-          # 检查是否需要单独的CSS
-          if [ -f "style.css" ]; then
-            cp style.css _site/
-            echo "复制了style.css"
-          fi
-          
-          echo "✅ 已准备HTML报告: $LATEST_HTML"
-        else
-          # 没有HTML文件，创建占位页面
-          echo "未找到HTML报告，创建占位页面"
-          
-          cat > _site/index.html << 'EOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>股票分析报告</title>
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            margin: 40px; 
-            line-height: 1.6;
-            background-color: #f5f5f5;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 { color: #333; }
-        .status {
-            padding: 15px;
-            background: #e8f4fd;
-            border-left: 4px solid #2196F3;
-            margin: 20px 0;
-        }
-        .info {
-            color: #666;
-            font-size: 0.9em;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>📊 股票分析报告</h1>
-        <div class="status">
-            <p><strong>状态:</strong> 报告正在生成中...</p>
-            <p>GitHub Actions 正在自动生成最新的股票分析报告。</p>
-            <p>通常这需要几分钟时间，请稍后刷新页面。</p>
-        </div>
-        <div class="info">
-            <p><strong>最后检查时间:</strong> $(date)</p>
-            <p><strong>注意:</strong> 如果没有自动刷新，请手动重新运行工作流。</p>
-        </div>
-    </div>
-</body>
-</html>
-EOF
-          
-          echo "✅ 创建了占位页面"
-        fi
-        
-        # 列出生成的页面
-        echo "=== 生成的页面文件 ==="
-        ls -la _site/
-        
+    # 创建发布目录
+    mkdir -p docs
+    
+    # 查找最新的HTML报告
+    echo "查找HTML报告文件..."
+    
+    if find . -name "stock_report_*.html" -type f | grep -q .; then
+      # 找到HTML文件，复制到发布目录
+      LATEST_HTML=$(find . -name "stock_report_*.html" -type f | sort -r | head -1)
+      echo "找到HTML报告: $LATEST_HTML"
+      
+      cp "$LATEST_HTML" docs/index.html
+      
+      # 检查是否需要单独的CSS
+      if [ -f "style.css" ]; then
+        cp style.css docs/
+        echo "复制了style.css"
+      fi
+      
+      echo "✅ 已准备HTML报告: $LATEST_HTML"
+    else
+      # 没有HTML文件，使用echo创建占位页面
+      echo "未找到HTML报告，创建占位页面"
+      
+      # 使用echo命令创建HTML文件
+      echo '<!DOCTYPE html>' > docs/index.html
+      echo '<html>' >> docs/index.html
+      echo '<head>' >> docs/index.html
+      echo '    <title>股票分析报告</title>' >> docs/index.html
+      echo '    <style>' >> docs/index.html
+      echo '        body { ' >> docs/index.html
+      echo '            font-family: Arial, sans-serif; ' >> docs/index.html
+      echo '            margin: 40px; ' >> docs/index.html
+      echo '            line-height: 1.6;' >> docs/index.html
+      echo '            background-color: #f5f5f5;' >> docs/index.html
+      echo '        }' >> docs/index.html
+      echo '        .container {' >> docs/index.html
+      echo '            max-width: 800px;' >> docs/index.html
+      echo '            margin: 0 auto;' >> docs/index.html
+      echo '            background: white;' >> docs/index.html
+      echo '            padding: 30px;' >> docs/index.html
+      echo '            border-radius: 10px;' >> docs/index.html
+      echo '            box-shadow: 0 2px 10px rgba(0,0,0,0.1);' >> docs/index.html
+      echo '        }' >> docs/index.html
+      echo '        h1 { color: #333; }' >> docs/index.html
+      echo '        .status {' >> docs/index.html
+      echo '            padding: 15px;' >> docs/index.html
+      echo '            background: #e8f4fd;' >> docs/index.html
+      echo '            border-left: 4px solid #2196F3;' >> docs/index.html
+      echo '            margin: 20px 0;' >> docs/index.html
+      echo '        }' >> docs/index.html
+      echo '        .info {' >> docs/index.html
+      echo '            color: #666;' >> docs/index.html
+      echo '            font-size: 0.9em;' >> docs/index.html
+      echo '        }' >> docs/index.html
+      echo '    </style>' >> docs/index.html
+      echo '</head>' >> docs/index.html
+      echo '<body>' >> docs/index.html
+      echo '    <div class="container">' >> docs/index.html
+      echo '        <h1>📊 股票分析报告</h1>' >> docs/index.html
+      echo '        <div class="status">' >> docs/index.html
+      echo '            <p><strong>状态:</strong> 报告正在生成中...</p>' >> docs/index.html
+      echo '            <p>GitHub Actions 正在自动生成最新的股票分析报告。</p>' >> docs/index.html
+      echo '            <p>通常这需要几分钟时间，请稍后刷新页面。</p>' >> docs/index.html
+      echo '        </div>' >> docs/index.html
+      echo '        <div class="info">' >> docs/index.html
+      echo '            <p><strong>最后检查时间:</strong> '$(date)'</p>' >> docs/index.html
+      echo '            <p><strong>注意:</strong> 如果没有自动刷新，请手动重新运行工作流。</p>' >> docs/index.html
+      echo '        </div>' >> docs/index.html
+      echo '    </div>' >> docs/index.html
+      echo '</body>' >> docs/index.html
+      echo '</html>' >> docs/index.html
+      
+      echo "✅ 占位页面已创建"
+    fi
+    
+    # 列出生成的页面
+    echo "=== docs目录内容 ==="
+    ls -la docs/
     # 6. 部署到GitHub Pages
     - name: 部署到GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
