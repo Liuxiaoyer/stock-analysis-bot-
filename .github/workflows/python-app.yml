@@ -71,7 +71,7 @@ jobs:
           # 如果上一步生成了URL，则使用它；否则回退到手动拼接
           FINAL_URL="${PAGE_URL}"
           if [ -z "$FINAL_URL" ]; then
-            FINAL_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+            FINAL_URL="https://Liuxiaoyer.github.io/stock-analysis-bot-/"
           fi
           echo "最终访问地址: $FINAL_URL"
           
