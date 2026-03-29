@@ -8,11 +8,8 @@ on:
   # 手动触发
   workflow_dispatch:
 
-# 解决Node.js 20弃用警告
 env:
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'  # 暂时允许使用Node.js 20
-  # 或者使用更新的Node.js版本（推荐）
-  # NODE_VERSION: '20.x'
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
   DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
   WECHAT_TOKEN: ${{ secrets.WECHAT_TOKEN }}
   WECHAT_WEBHOOK_URL: ${{ secrets.WECHAT_WEBHOOK_URL }}
@@ -24,11 +21,11 @@ jobs:
     steps:
     # 1. 检出代码
     - name: 检出代码
-      uses: actions/checkout@v4  # 更新到v4
+      uses: actions/checkout@v4
     
     # 2. 设置Python环境
     - name: 设置Python
-      uses: actions/setup-python@v5  # 更新到v5
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
     
@@ -36,39 +33,68 @@ jobs:
     - name: 安装依赖
       run: |
         python -m pip install --upgrade pip
-        pip install requests pandas
+        pip install requests pandas markdown
         pip install akshare --upgrade
     
-    # 4. 测试Python环境
-    - name: 测试环境
-      run: |
-        python --version
-        pip list | grep akshare
-    
-    # 5. 运行分析脚本（添加详细日志）
+    # 4. 运行股票分析
     - name: 运行股票分析
       env:
         WECHAT_TOKEN: ${{ secrets.WECHAT_TOKEN }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
         echo "开始运行股票分析脚本..."
-        python -c "print('Python环境正常')"
-        # 先检查脚本是否存在
         if [ -f "stock_analysis.py" ]; then
-          echo "找到stock_analysis.py文件"
           python stock_analysis.py
         else
           echo "错误：找不到stock_analysis.py文件"
-          ls -la
           exit 1
         fi
     
-    # 6. 上传报告文件
+    # 5. 准备GitHub Pages文件
+    - name: 准备Pages文件
+      run: |
+        # 创建docs目录（GitHub Pages的默认发布目录）
+        mkdir -p docs
+        
+        # 找到最新的报告文件
+        LATEST_REPORT=$(ls -t stock_report_*.html 2>/dev/null | head -1)
+        
+        if [ -n "$LATEST_REPORT" ]; then
+          # 复制报告到docs目录
+          cp "$LATEST_REPORT" docs/index.html
+          
+          # 创建样式文件
+          cat > docs/style.css << 'EOF'
+          body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+          .header { background: #f5f5f5; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+          .stock-card { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
+          .up { color: #e74c3c; font-weight: bold; }
+          .down { color: #27ae60; font-weight: bold; }
+          .timestamp { color: #666; font-size: 0.9em; }
+          .ai-analysis { background: #f8f9fa; padding: 10px; border-left: 4px solid #3498db; }
+          EOF
+          
+          echo "Pages文件准备完成"
+        else
+          echo "未找到报告文件"
+          exit 1
+        fi
+    
+    # 6. 部署到GitHub Pages
+    - name: 部署到GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs
+        keep_files: false
+    
+    # 7. 上传报告文件（用于调试）
     - name: 上传报告文件
-      if: always()  # 即使失败也上传日志
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: stock-reports
         path: |
-          stock_report_*.txt
+          stock_report_*.*
           *.log
           error.log
