@@ -50,64 +50,91 @@ jobs:
           exit 1
         fi
     
-      # 5. 准备GitHub Pages文件
+         # 5. 准备GitHub Pages文件（直接使用现有HTML）
     - name: 准备Pages文件
       run: |
-        # 创建docs目录（GitHub Pages的默认发布目录）
-        mkdir -p docs
+        echo "开始准备GitHub Pages..."
         
-        # 找到最新的报告文件
-        LATEST_REPORT=$(ls -t stock_report_*.html 2>/dev/null | head -1)
+        # 创建发布目录
+        mkdir -p _site
         
-        if [ -n "$LATEST_REPORT" ]; then
-          # 复制报告到docs目录
-          cp "$LATEST_REPORT" docs/index.html
+        # 查找最新的HTML报告
+        echo "查找HTML报告文件..."
+        if ls stock_report_*.html 1> /dev/null 2>&1; then
+          # 找到HTML文件，复制到发布目录
+          LATEST_HTML=$(ls -t stock_report_*.html | head -1)
+          echo "找到HTML报告: $LATEST_HTML"
           
-          # 创建样式文件 - 使用正确的Here Document语法
-          cat > docs/style.css << 'STYLE_EOF'
-body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
-.header { background: #f5f5f5; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
-.stock-card { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
-.up { color: #e74c3c; font-weight: bold; }
-.down { color: #27ae60; font-weight: bold; }
-.timestamp { color: #666; font-size: 0.9em; }
-.ai-analysis { background: #f8f9fa; padding: 10px; border-left: 4px solid #3498db; }
-STYLE_EOF
+          cp "$LATEST_HTML" _site/index.html
           
-          echo "Pages文件准备完成"
+          # 检查是否需要单独的CSS
+          if [ -f "style.css" ]; then
+            cp style.css _site/
+            echo "复制了style.css"
+          fi
+          
+          echo "✅ 已准备HTML报告: $LATEST_HTML"
         else
-          echo "未找到报告文件，创建示例文件"
-          # 创建示例HTML文件
-          cat > docs/index.html << 'HTML_EOF'
+          # 没有HTML文件，创建占位页面
+          echo "未找到HTML报告，创建占位页面"
+          
+          cat > _site/index.html << 'EOF'
 <!DOCTYPE html>
 <html>
 <head>
     <title>股票分析报告</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .header { background: #f5f5f5; padding: 20px; border-radius: 5px; }
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 40px; 
+            line-height: 1.6;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        .status {
+            padding: 15px;
+            background: #e8f4fd;
+            border-left: 4px solid #2196F3;
+            margin: 20px 0;
+        }
+        .info {
+            color: #666;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>股票分析报告</h1>
-        <p>报告生成中，请稍后刷新页面...</p>
+    <div class="container">
+        <h1>📊 股票分析报告</h1>
+        <div class="status">
+            <p><strong>状态:</strong> 报告正在生成中...</p>
+            <p>GitHub Actions 正在自动生成最新的股票分析报告。</p>
+            <p>通常这需要几分钟时间，请稍后刷新页面。</p>
+        </div>
+        <div class="info">
+            <p><strong>最后检查时间:</strong> $(date)</p>
+            <p><strong>注意:</strong> 如果没有自动刷新，请手动重新运行工作流。</p>
+        </div>
     </div>
 </body>
 </html>
-HTML_EOF
+EOF
           
-          # 复制样式文件
-          cat > docs/style.css << 'STYLE2_EOF'
-body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
-.header { background: #f5f5f5; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
-.stock-card { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
-.up { color: #e74c3c; font-weight: bold; }
-.down { color: #27ae60; font-weight: bold; }
-.timestamp { color: #666; font-size: 0.9em; }
-.ai-analysis { background: #f8f9fa; padding: 10px; border-left: 4px solid #3498db; }
-STYLE2_EOF
+          echo "✅ 创建了占位页面"
         fi
+        
+        # 列出生成的页面
+        echo "=== 生成的页面文件 ==="
+        ls -la _site/
+        
     # 6. 部署到GitHub Pages
     - name: 部署到GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
