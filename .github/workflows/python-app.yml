@@ -2,111 +2,85 @@ name: 股票分析及自动发布
 
 on:
   schedule:
-    - cron: '30 1,3,7 * * 1-5'
-  workflow_dispatch:
+    - cron: '30 1,3,7 * * 1-5' # 交易日运行
+  workflow_dispatch: # 允许手动触发
 
+# 为整个工作流设置写入权限
 permissions:
   contents: write
   pages: write
   id-token: write
 
 jobs:
-  analyze-and-deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }} # 这行可生成后续可用的URL变量
 
     steps:
-    - name: 检出代码
-      uses: actions/checkout@v4
+      - name: 检出代码
+        uses: actions/checkout@v4
 
-    - name: 设置Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
+      - name: 设置Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-    - name: 安装依赖
-      run: |
-        pip install requests pandas akshare
+      - name: 安装依赖
+        run: |
+          pip install requests pandas akshare
 
-    - name: 运行股票分析
-      env:
-        DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        WECHAT_TOKEN: ${{ secrets.WECHAT_TOKEN }}
-      run: |
-        echo "开始运行股票分析脚本..."
-        python stock_analysis.py
-        
-        echo "=== 生成的文件 ==="
-        ls -la *.html 2>/dev/null || echo "未找到HTML文件"
+      - name: 运行分析脚本
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python stock_analysis.py
 
-    - name: 准备发布文件
-      run: |
-        echo "准备发布文件到 docs 目录..."
-        mkdir -p docs
-        
-        # 查找最新的HTML报告
-        HTML_REPORT=$(find . -name "stock_report_*.html" -type f | head -1)
-        
-        if [ -n "$HTML_REPORT" ]; then
-          echo "找到报告: $HTML_REPORT"
-          cp "$HTML_REPORT" docs/index.html
-          echo "✅ 已复制报告到 docs/index.html"
-        else
-          echo "⚠️ 未找到HTML报告，创建提示页面"
-          cat > docs/index.html << 'EOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>股票分析报告</title>
-    <style>body{font-family:Arial; margin:40px;}</style>
-</head>
-<body>
-    <h1>📊 股票分析报告</h1>
-    <p>报告生成中，请检查工作流运行状态。</p>
-    <p><a href="https://github.com/${{ github.repository }}/actions">查看工作流状态</a></p>
-</body>
-</html>
-EOF
-        fi
-        
-        echo "=== docs目录内容 ==="
-        ls -la docs/
+      - name: 准备页面文件
+        run: |
+          # 创建发布目录
+          mkdir -p _site
+          # 查找最新生成的HTML报告
+          if ls stock_report_*.html 1> /dev/null 2>&1; then
+            cp $(ls -t stock_report_*.html | head -1) _site/index.html
+            echo "✅ 已复制最新报告"
+          else
+            # 创建兜底页面
+            echo '<h1>报告生成中...</h1>' > _site/index.html
+          fi
 
-    - name: 设置Pages
-      uses: actions/configure-pages@v3
+      - name: 设置Pages
+        uses: actions/configure-pages@v4
 
-    - name: 上传制品
-      uses: actions/upload-pages-artifact@v2
-      with:
-        path: 'docs'
+      - name: 上传站点文件
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '_site/'
 
-    - name: 部署到GitHub Pages
-      id: deployment
-      uses: actions/deploy-pages@v2
+      - name: 部署到GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        # 此步骤会自动生成 page_url
 
-    - name: 发送微信通知
-      if: success()
-      env:
-        WECHAT_TOKEN: ${{ secrets.WECHAT_TOKEN }}
-      run: |
-        # 使用部署步骤生成的URL
-        PAGE_URL="${{ steps.deployment.outputs.page_url }}"
-        
-        # 如果没有生成，使用默认URL
-        if [ -z "$PAGE_URL" ]; then
-          PAGE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
-        fi
-        
-        echo "报告访问地址: $PAGE_URL"
-        
-        # 发送微信通知
-        curl -X POST "http://www.pushplus.plus/send" \
-          -H "Content-Type: application/json" \
-          -d "{
-            \"token\": \"$WECHAT_TOKEN\",
-            \"title\": \"📈 股票分析报告已发布\",
-            \"content\": \"股票分析报告已成功发布！<br><br>🔗 <a href='$PAGE_URL'>点击查看完整报告</a><br><br>更新时间: $(date)\",
-            \"template\": \"html\"
-          }"
+      - name: 发送微信通知（带链接）
+        if: success()
+        env:
+          WECHAT_TOKEN: ${{ secrets.WECHAT_TOKEN }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          # 如果上一步生成了URL，则使用它；否则回退到手动拼接
+          FINAL_URL="${PAGE_URL}"
+          if [ -z "$FINAL_URL" ]; then
+            FINAL_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+          fi
+          echo "最终访问地址: $FINAL_URL"
+          
+          # 发送微信消息
+          curl -X POST "http://www.pushplus.plus/send" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"token\": \"$WECHAT_TOKEN\",
+              \"title\": \"📈 股票报告已发布（可访问）\",
+              \"content\": \"股票分析报告已成功部署并可访问！<br><br>🔗 <a href=\'$FINAL_URL\'>点击此处查看完整报告</a>\",
+              \"template\": \"html\"
+            }"
