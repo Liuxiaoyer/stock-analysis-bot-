@@ -167,93 +167,183 @@ def analyze_with_deepseek(stock_data, historical_data):
         log_error(f"DeepSeek分析失败: {e}")
         return f"AI分析暂时不可用: {str(e)}"
 
-def send_wechat_message(message, title="股票分析报告"):
-    """发送微信消息（使用PushPlus）"""
+def split_long_message(message, max_length=800):
+    """
+    将长消息智能分割为多个片段
+    参数:
+        message: 原始消息
+        max_length: 每个片段的最大长度（PushPlus建议小于1000）
+    返回: 消息片段列表
+    """
+    if len(message) <= max_length:
+        return [message]
+    
+    fragments = []
+    # 优先按股票分割（查找 '##' 开头的股票标题）
+    lines = message.split('\n')
+    current_fragment = ""
+    
+    for line in lines:
+        # 如果遇到新的股票标题，且当前片段已有内容，则保存当前片段
+        if line.startswith('## ') and current_fragment and len(current_fragment) + len(line) > max_length:
+            fragments.append(current_fragment.strip())
+            current_fragment = line + "\n"
+        else:
+            # 如果当前片段即将超长，也保存它
+            if len(current_fragment) + len(line) + 1 > max_length:
+                fragments.append(current_fragment.strip())
+                current_fragment = line + "\n"
+            else:
+                current_fragment += line + "\n"
+    
+    # 添加最后一个片段
+    if current_fragment.strip():
+        fragments.append(current_fragment.strip())
+    
+    # 如果分割后片段仍然太长，进行二次分割（按段落）
+    final_fragments = []
+    for fragment in fragments:
+        if len(fragment) <= max_length:
+            final_fragments.append(fragment)
+        else:
+            # 按句号、换行等简单分割
+            sentences = fragment.replace('。', '。\n').split('\n')
+            temp_text = ""
+            for sentence in sentences:
+                if len(temp_text) + len(sentence) + 1 > max_length:
+                    final_fragments.append(temp_text.strip())
+                    temp_text = sentence + "\n"
+                else:
+                    temp_text += sentence + "\n"
+            if temp_text.strip():
+                final_fragments.append(temp_text.strip())
+    
+    return final_fragments
+
+def send_wechat_message(message, title="股票分析报告", max_retries=2):
+    """
+    发送微信消息（支持分条推送）
+    参数:
+        message: 要发送的消息内容
+        title: 消息标题
+        max_retries: 失败重试次数
+    """
     if not WECHAT_TOKEN:
-        print("❌❌ 微信Token未配置，跳过推送")
+        print("❌ 微信Token未配置，跳过推送")
         return False
     
-    try:
-        # 检查Token格式
-        token_clean = WECHAT_TOKEN.strip()
-        if not token_clean or len(token_clean) < 10:
-            print(f"❌❌ Token格式异常: {token_clean}")
-            return False
+    # 检查Token格式
+    token_clean = WECHAT_TOKEN.strip()
+    if not token_clean or len(token_clean) < 10:
+        print(f"❌ Token格式异常: {token_clean}")
+        return False
+    
+    print(f"🔍 Token检查: 长度{len(token_clean)}，前5位: {token_clean[:5]}...")
+    
+    # 1. 分割长消息
+    message_fragments = split_long_message(message, max_length=800)
+    print(f"📤 消息被分割为 {len(message_fragments)} 条发送")
+    
+    if len(message_fragments) > 5:
+        print(f"⚠️  警告: 消息被分割为 {len(message_fragments)} 条，可能过多，考虑精简内容")
+    
+    # 2. 逐条发送
+    success_count = 0
+    beijing_time = format_beijing_time('%H:%M')
+    
+    for i, fragment in enumerate(message_fragments):
+        fragment_title = f"{title} ({i+1}/{len(message_fragments)}) {beijing_time}"
         
-        print(f"🔍🔍 Token检查: 长度{len(token_clean)}，前5位: {token_clean[:5]}...")
-        
-        # PushPlus API地址
-        url = "http://www.pushplus.plus/send"
-        
-        # 清理消息内容，移除可能的问题字符
-        import re
-        clean_message = re.sub(r'[^\w\s\u4e00-\u9fff\.,!?;:(){}<>/\\|@#$%^&*+=-]', '', message)
-        clean_message = clean_message[:1000]  # 限制长度
-        
-        # 使用北京时间
-        beijing_time = format_beijing_time('%H:%M')
-        
-        # 使用简化版数据格式
-        data = {
-            "token": token_clean,
-            "title": f"股票分析 {beijing_time} (北京时间)",
-            "content": clean_message.replace('\n', '<br>'),
-            "template": "html",
-            "channel": "wechat"  # 明确指定通道
-        }
-        
-        print(f"📤📤 发送微信消息...")
-        print(f"   标题: {data['title']}")
-        print(f"   内容长度: {len(clean_message)} 字符")
-        print(f"   通道: {data['channel']}")
-        
-        # 发送请求
-        response = requests.post(url, json=data, timeout=15)
-        print(f"   HTTP状态码: {response.status_code}")
-        print(f"   响应内容: {response.text}")
-        
-        # 解析响应
-        if response.status_code == 200:
+        for retry in range(max_retries + 1):
             try:
-                result = response.json()
-                print(f"   JSON响应: {result}")
+                # 最后一条重试时不添加序号，避免重复
+                if retry > 0:
+                    fragment_title = f"{title} {beijing_time} (重试{retry})"
                 
-                if result.get('code') == 200:
-                    print("✅ 微信消息发送成功！")
-                    return True
+                # PushPlus API地址
+                url = "http://www.pushplus.plus/send"
+                
+                # 清理消息内容
+                import re
+                clean_fragment = re.sub(r'[^\w\s\u4e00-\u9fff\.,!?;:(){}<>/\\|@#$%^&*+=-]', '', fragment)
+                
+                # 添加分段指示
+                if len(message_fragments) > 1:
+                    segment_info = f"\n\n--- 第 {i+1}/{len(message_fragments)} 部分 ---\n"
+                    if i == 0:
+                        clean_fragment = segment_info + clean_fragment
+                    elif i == len(message_fragments) - 1:
+                        clean_fragment = clean_fragment + f"\n\n--- 报告完，共{len(message_fragments)}条 ---"
+                    else:
+                        clean_fragment = segment_info + clean_fragment
+                
+                data = {
+                    "token": token_clean,
+                    "title": fragment_title,
+                    "content": clean_fragment.replace('\n', '<br>'),
+                    "template": "html",
+                    "channel": "wechat"
+                }
+                
+                print(f"  发送第 {i+1}/{len(message_fragments)} 条...")
+                print(f"    长度: {len(clean_fragment)} 字符")
+                
+                response = requests.post(url, json=data, timeout=15)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    if result.get('code') == 200:
+                        print(f"  ✅ 第 {i+1} 条发送成功")
+                        success_count += 1
+                        break  # 本条发送成功，跳出重试循环
+                    else:
+                        print(f"  ❌ 第 {i+1} 条失败: {result.get('msg')}")
+                        if retry < max_retries:
+                            print(f"    等待{2**retry}秒后重试...")
+                            time.sleep(2 ** retry)
+                        else:
+                            print(f"  ⏭️  放弃第 {i+1} 条")
                 else:
-                    error_msg = result.get('msg', '未知错误')
-                    error_code = result.get('code', '未知')
-                    print(f"❌❌ 推送失败: 代码={error_code}, 消息={error_msg}")
-                    
-                    # 根据错误代码提供建议
-                    if error_code == 401:
-                        print("💡💡 建议: Token无效，请重新获取")
-                    elif error_code == 402:
-                        print("💡💡 建议: Token过期，请重新获取")
-                    elif error_code == 400:
-                        print("💡💡 建议: 消息格式错误，检查内容")
-                    
-                    return False
-            except json.JSONDecodeError:
-                print("❌❌ 响应不是有效的JSON格式")
-                print(f"   原始响应: {response.text}")
-                return False
-        else:
-            print(f"❌❌ HTTP错误: {response.status_code}")
-            return False
-            
-    except requests.exceptions.Timeout:
-        print("❌❌ 请求超时")
-        return False
-    except requests.exceptions.ConnectionError:
-        print("❌❌ 网络连接错误")
-        return False
-    except Exception as e:
-        print(f"❌❌ 发送消息异常: {type(e).__name__}: {e}")
-        import traceback
-        print(f"   详细堆栈: {traceback.format_exc()}")
-        return False
+                    print(f"  ❌ 第 {i+1} 条HTTP错误: {response.status_code}")
+                    if retry < max_retries:
+                        time.sleep(2 ** retry)
+                
+            except requests.exceptions.Timeout:
+                print(f"  ⏱️  第 {i+1} 条超时")
+                if retry < max_retries:
+                    time.sleep(2 ** retry)
+            except Exception as e:
+                print(f"  ❌ 第 {i+1} 条异常: {e}")
+                if retry < max_retries:
+                    time.sleep(2 ** retry)
+        
+        # 每条消息之间间隔1秒，避免发送过快
+        if i < len(message_fragments) - 1:
+            time.sleep(1)
+    
+    # 3. 发送汇总提示
+    if success_count > 0 and len(message_fragments) > 1:
+        summary_msg = f"📊 股票分析报告推送完成\n\n共发送 {success_count}/{len(message_fragments)} 条消息\n北京时间: {beijing_time}"
+        try:
+            summary_data = {
+                "token": token_clean,
+                "title": f"报告推送汇总 {beijing_time}",
+                "content": summary_msg.replace('\n', '<br>'),
+                "template": "html"
+            }
+            requests.post("http://www.pushplus.plus/send", json=summary_data, timeout=10)
+            print("📨 汇总提示已发送")
+        except:
+            pass  # 汇总提示失败不影响主流程
+    
+    success_rate = success_count / len(message_fragments) if message_fragments else 0
+    if success_rate >= 0.8:  # 80%以上成功即视为整体成功
+        print(f"✅ 微信推送完成 ({success_count}/{len(message_fragments)} 条成功)")
+        return True
+    else:
+        print(f"⚠️  微信推送部分失败 ({success_count}/{len(message_fragments)} 条成功)")
+        return success_count > 0
+
         
 def generate_stock_report(stock_list):
     """生成股票分析报告"""
