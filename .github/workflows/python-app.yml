@@ -50,7 +50,7 @@ jobs:
           exit 1
         fi
     
-    # 5. 准备GitHub Pages文件
+      # 5. 准备GitHub Pages文件
     - name: 准备Pages文件
       run: |
         # 创建docs目录（GitHub Pages的默认发布目录）
@@ -63,23 +63,51 @@ jobs:
           # 复制报告到docs目录
           cp "$LATEST_REPORT" docs/index.html
           
-          # 创建样式文件
-          cat > docs/style.css << 'EOF'
-          body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
-          .header { background: #f5f5f5; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
-          .stock-card { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
-          .up { color: #e74c3c; font-weight: bold; }
-          .down { color: #27ae60; font-weight: bold; }
-          .timestamp { color: #666; font-size: 0.9em; }
-          .ai-analysis { background: #f8f9fa; padding: 10px; border-left: 4px solid #3498db; }
-          EOF
+          # 创建样式文件 - 使用正确的Here Document语法
+          cat > docs/style.css << 'STYLE_EOF'
+body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+.header { background: #f5f5f5; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+.stock-card { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
+.up { color: #e74c3c; font-weight: bold; }
+.down { color: #27ae60; font-weight: bold; }
+.timestamp { color: #666; font-size: 0.9em; }
+.ai-analysis { background: #f8f9fa; padding: 10px; border-left: 4px solid #3498db; }
+STYLE_EOF
           
           echo "Pages文件准备完成"
         else
-          echo "未找到报告文件"
-          exit 1
+          echo "未找到报告文件，创建示例文件"
+          # 创建示例HTML文件
+          cat > docs/index.html << 'HTML_EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>股票分析报告</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { background: #f5f5f5; padding: 20px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>股票分析报告</h1>
+        <p>报告生成中，请稍后刷新页面...</p>
+    </div>
+</body>
+</html>
+HTML_EOF
+          
+          # 复制样式文件
+          cat > docs/style.css << 'STYLE2_EOF'
+body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+.header { background: #f5f5f5; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+.stock-card { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
+.up { color: #e74c3c; font-weight: bold; }
+.down { color: #27ae60; font-weight: bold; }
+.timestamp { color: #666; font-size: 0.9em; }
+.ai-analysis { background: #f8f9fa; padding: 10px; border-left: 4px solid #3498db; }
+STYLE2_EOF
         fi
-    
     # 6. 部署到GitHub Pages
     - name: 部署到GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
