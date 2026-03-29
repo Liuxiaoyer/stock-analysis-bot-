@@ -50,7 +50,7 @@ jobs:
           exit 1
         fi
     
-         # 5. 准备GitHub Pages文件（直接使用现有HTML）
+    # 5. 准备GitHub Pages文件（直接使用现有HTML）
     - name: 准备Pages文件
       run: |
         echo "开始准备GitHub Pages..."
