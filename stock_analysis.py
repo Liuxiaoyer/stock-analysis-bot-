@@ -43,7 +43,8 @@ def format_beijing_time(format_str='%Y-%m-%d %H:%M:%S'):
 def get_stock_data(stock_code):
     """获取股票实时数据"""
     try:
-        df = ak.stock_zh_a_spot_em()
+        #df = ak.stock_zh_a_spot_em()
+        df = ak.stock_zh_a_spot()
         stock_data = df[df['代码'] == stock_code]
         
         if not stock_data.empty:
