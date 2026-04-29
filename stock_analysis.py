@@ -169,10 +169,10 @@ def analyze_with_deepseek(stock_data, historical_data):
             "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
             "Content-Type": "application/json"
         }
-        
+         # "model": "deepseek-chat",
         data = {
-           # "model": "deepseek-chat",
-            “model”："deepseek-v4-pro"，
+          
+           "model": "deepseek-v4-pro"，
             "messages": [
                 {
                     "role": "system",
