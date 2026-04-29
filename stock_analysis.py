@@ -171,7 +171,8 @@ def analyze_with_deepseek(stock_data, historical_data):
         }
         
         data = {
-            "model": "deepseek-chat",
+           # "model": "deepseek-chat",
+            “model”："deepseek-v4-pro"，
             "messages": [
                 {
                     "role": "system",
