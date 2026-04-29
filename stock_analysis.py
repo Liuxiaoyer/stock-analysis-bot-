@@ -41,31 +41,103 @@ def format_beijing_time(format_str='%Y-%m-%d %H:%M:%S'):
     return get_beijing_time().strftime(format_str)
 
 def get_stock_data(stock_code):
-    """获取股票实时数据"""
-    try:
-        df = ak.stock_zh_a_spot_em()
-        #df = ak.stock_zh_a_spot()
-        stock_data = df[df['代码'] == stock_code]
-        
-        if not stock_data.empty:
-            stock = stock_data.iloc[0]
-            return {
-                'code': stock_code,
-                'name': stock['名称'],
-                'price': stock['最新价'],
-                'change': stock['涨跌幅'],
-                'change_amount': stock['涨跌额'],
-                'volume': stock['成交量'],
-                'turnover': stock['成交额'],
-                'high': stock['最高'],
-                'low': stock['最低'],
-                'open': stock['今开'],
-                'close': stock['昨收']
-            }
-        return None
-    except Exception as e:
-        print(f"获取股票{stock_code}数据失败: {e}")
-        return None
+    """获取股票实时数据 - 优化版本"""
+    max_retries = 3
+    retry_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            # 方法1: 尝试新版接口
+            try:
+                df = ak.stock_zh_a_spot_em()
+                print(f"尝试使用 stock_zh_a_spot_em() 接口...")
+            except Exception as e1:
+                print(f"接口1失败: {e1}")
+                # 方法2: 备用接口
+                df = ak.stock_zh_a_spot()
+                print(f"回退到 stock_zh_a_spot() 接口...")
+            
+            # 检查列名，处理可能的列名差异
+            if '代码' in df.columns:
+                code_col = '代码'
+            elif 'symbol' in df.columns:
+                code_col = 'symbol'
+            elif '代码' in [col.strip() for col in df.columns]:
+                # 处理可能的空格
+                for col in df.columns:
+                    if '代码' in col:
+                        code_col = col
+                        break
+                else:
+                    code_col = df.columns[0]  # 使用第一列
+            else:
+                code_col = df.columns[0]
+            
+            # 股票代码可能需要添加前缀
+            search_code = stock_code
+            if len(stock_code) == 6:
+                if stock_code.startswith(('600', '601', '603', '605', '688')):
+                    search_code = f"sh{stock_code}"
+                elif stock_code.startswith(('000', '001', '002', '003', '300')):
+                    search_code = f"sz{stock_code}"
+                elif stock_code.startswith(('400', '430', '831', '832', '833')):
+                    search_code = f"bj{stock_code}"
+            
+            # 查找股票
+            stock_data = df[df[code_col] == search_code]
+            
+            if stock_data.empty:
+                # 尝试不带前缀
+                stock_data = df[df[code_col].str.contains(stock_code)]
+            
+            if not stock_data.empty:
+                stock = stock_data.iloc[0]
+                
+                # 列名映射
+                column_mapping = {
+                    'code': ['代码', 'symbol', 'code'],
+                    'name': ['名称', 'name'],
+                    'price': ['最新价', 'current', 'price'],
+                    'change': ['涨跌幅', '涨跌%', 'pct_chg'],
+                    'change_amount': ['涨跌额', 'change'],
+                    'volume': ['成交量', 'volume', 'vol'],
+                    'turnover': ['成交额', 'amount'],
+                    'high': ['最高', 'high'],
+                    'low': ['最低', 'low'],
+                    'open': ['今开', 'open'],
+                    'close': ['昨收', 'pre_close']
+                }
+                
+                result = {'code': stock_code}
+                for field, possible_columns in column_mapping.items():
+                    value_found = None
+                    for col in possible_columns:
+                        if col in stock.index:
+                            value_found = stock[col]
+                            break
+                    
+                    if value_found is not None:
+                        result[field] = value_found
+                    else:
+                        # 如果找不到，使用默认值
+                        result[field] = 0
+                
+                # 确保名称字段
+                if 'name' not in result or not result['name']:
+                    result['name'] = stock_code
+                
+                print(f"成功获取股票 {stock_code} 数据")
+                return result
+                
+            return None
+            
+        except Exception as e:
+            if attempt < max_retries - 1:
+                print(f"第{attempt+1}次获取股票{stock_code}数据失败，{retry_delay}秒后重试: {e}")
+                time.sleep(retry_delay)
+            else:
+                print(f"获取股票{stock_code}数据最终失败: {e}")
+                return None
 
 def analyze_with_deepseek(stock_data, historical_data):
     """使用DeepSeek分析股票数据"""
