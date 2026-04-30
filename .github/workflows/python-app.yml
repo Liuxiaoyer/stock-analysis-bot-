@@ -1,7 +1,7 @@
 name: 股票分析及自动发布
 on:
   schedule:
-    - cron: '30 1,3 * * 0-5' # 交易日运行
+    - cron: '0 7 * * 0-5' # 交易日运行
   workflow_dispatch: # 允许手动触发
 
 # 为整个工作流设置写入权限
