@@ -27,7 +27,8 @@ YOUR_STOCKS = [
     {'code': '002594', 'name': '比亚迪'},
     {'code': '603688', 'name': '石英股份'},
     {'code': '002475', 'name': '立讯精密'},
-    {'code': '601318', 'name': '中国平安'}
+    {'code': '601318', 'name': '中国平安'},
+    {'code': '000400', 'name': '许继电器'}
 ]
 
 def get_beijing_time():
