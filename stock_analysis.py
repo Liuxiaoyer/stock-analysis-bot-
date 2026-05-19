@@ -50,7 +50,7 @@ def get_stock_data(stock_code):
         try:
     
             # 方法2: 备用接口
-            df = ak.stock_zh_a_spot(symbol=stock_code, timeout=5)
+            df = ak.stock_zh_a_spot()
             print(f"回退到 stock_zh_a_spot() 接口...")
             
             # 检查列名，处理可能的列名差异
