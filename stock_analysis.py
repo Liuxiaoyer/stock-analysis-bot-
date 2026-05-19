@@ -47,7 +47,7 @@ def get_stock_data(stock_code):
     retry_delay = 2
     
     for attempt in range(max_retries):
-        try:
+        #try:
             # 方法1: 尝试新版接口
             #try:
                # df = ak.stock_zh_a_spot_em()
@@ -132,13 +132,13 @@ def get_stock_data(stock_code):
                 
             return None
             
-        except Exception as e:
-            if attempt < max_retries - 1:
-                print(f"第{attempt+1}次获取股票{stock_code}数据失败，{retry_delay}秒后重试: {e}")
-                time.sleep(retry_delay)
-            else:
-                print(f"获取股票{stock_code}数据最终失败: {e}")
-                return None
+        #except Exception as e:
+         #   if attempt < max_retries - 1:
+          #      print(f"第{attempt+1}次获取股票{stock_code}数据失败，{retry_delay}秒后重试: {e}")
+           #     time.sleep(retry_delay)
+          #  else:
+           #     print(f"获取股票{stock_code}数据最终失败: {e}")
+            #    return None
 
 def analyze_with_deepseek(stock_data, historical_data):
     """使用DeepSeek分析股票数据"""
