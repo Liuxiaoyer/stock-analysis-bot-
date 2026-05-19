@@ -45,12 +45,12 @@ def get_stock_data(stock_code):
     """获取股票实时数据 - 优化版本"""
     max_retries = 3
     retry_delay = 2
-    time.sleep(random.uniform(1,3))
+    time.sleep(3)
     for attempt in range(max_retries):
         try:
     
             # 方法2: 备用接口
-            df = ak.stock_zh_a_spot()
+            df = ak.stock_zh_a_spot(symbol=stock_code, timeout=5)
             print(f"回退到 stock_zh_a_spot() 接口...")
             
             # 检查列名，处理可能的列名差异
