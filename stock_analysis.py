@@ -47,8 +47,8 @@ def get_stock_data(stock_code):
     retry_delay = 2
     
     for attempt in range(max_retries):
-        #try:
-        
+        try:
+    
             # 方法2: 备用接口
             df = ak.stock_zh_a_spot()
             print(f"回退到 stock_zh_a_spot() 接口...")
