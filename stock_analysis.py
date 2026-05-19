@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 GitHub Actions股票分析脚本 - GitHub Pages版本
+优化版本：只获取一次全市场数据
 生成HTML报告并自动部署
 """
 
@@ -14,6 +15,7 @@ import akshare as ak
 from datetime import datetime, timedelta
 import traceback
 import time
+import random
 
 # 配置参数
 WECHAT_TOKEN = os.getenv('WECHAT_TOKEN', '')
@@ -41,99 +43,114 @@ def format_beijing_time(format_str='%Y-%m-%d %H:%M:%S'):
     """格式化北京时间"""
     return get_beijing_time().strftime(format_str)
 
-def get_stock_data(stock_code):
-    """获取股票实时数据 - 优化版本"""
+def get_market_data():
+    """获取全市场股票数据（只调用一次）"""
     max_retries = 3
     retry_delay = 2
-    time.sleep(3)
+    
     for attempt in range(max_retries):
         try:
-    
-            # 方法2: 备用接口
+            # 随机延时，避免触发反爬机制
+            time.sleep(random.uniform(1, 3))
+            
+            # 获取全市场数据
             df = ak.stock_zh_a_spot()
-            print(f"回退到 stock_zh_a_spot() 接口...")
+            print(f"✅ 成功获取全市场数据，共 {len(df)} 支股票")
             
-            # 检查列名，处理可能的列名差异
-            if '代码' in df.columns:
-                code_col = '代码'
-            elif 'symbol' in df.columns:
-                code_col = 'symbol'
-            elif '代码' in [col.strip() for col in df.columns]:
-                # 处理可能的空格
-                for col in df.columns:
-                    if '代码' in col:
-                        code_col = col
-                        break
-                else:
-                    code_col = df.columns[0]  # 使用第一列
-            else:
-                code_col = df.columns[0]
+            # 调试：打印列名
+            print(f"列名: {df.columns.tolist()}")
             
-            # 股票代码可能需要添加前缀
-            search_code = stock_code
-            if len(stock_code) == 6:
-                if stock_code.startswith(('600', '601', '603', '605', '688')):
-                    search_code = f"sh{stock_code}"
-                elif stock_code.startswith(('000', '001', '002', '003', '300')):
-                    search_code = f"sz{stock_code}"
-                elif stock_code.startswith(('400', '430', '831', '832', '833')):
-                    search_code = f"bj{stock_code}"
-            
-            # 查找股票
-            stock_data = df[df[code_col] == search_code]
-            
-            if stock_data.empty:
-                # 尝试不带前缀
-                stock_data = df[df[code_col].str.contains(stock_code)]
-            
-            if not stock_data.empty:
-                stock = stock_data.iloc[0]
-                
-                # 列名映射
-                column_mapping = {
-                    'code': ['代码', 'symbol', 'code'],
-                    'name': ['名称', 'name'],
-                    'price': ['最新价', 'current', 'price'],
-                    'change': ['涨跌幅', '涨跌%', 'pct_chg'],
-                    'change_amount': ['涨跌额', 'change'],
-                    'volume': ['成交量', 'volume', 'vol'],
-                    'turnover': ['成交额', 'amount'],
-                    'high': ['最高', 'high'],
-                    'low': ['最低', 'low'],
-                    'open': ['今开', 'open'],
-                    'close': ['昨收', 'pre_close']
-                }
-                
-                result = {'code': stock_code}
-                for field, possible_columns in column_mapping.items():
-                    value_found = None
-                    for col in possible_columns:
-                        if col in stock.index:
-                            value_found = stock[col]
-                            break
-                    
-                    if value_found is not None:
-                        result[field] = value_found
-                    else:
-                        # 如果找不到，使用默认值
-                        result[field] = 0
-                
-                # 确保名称字段
-                if 'name' not in result or not result['name']:
-                    result['name'] = stock_code
-                
-                print(f"成功获取股票 {stock_code} 数据")
-                return result
-                
-            return None
-            
+            return df
         except Exception as e:
             if attempt < max_retries - 1:
-               print(f"第{attempt+1}次获取股票{stock_code}数据失败，{retry_delay}秒后重试: {e}")
-               time.sleep(retry_delay)
+                print(f"第{attempt+1}次获取全市场数据失败，{retry_delay}秒后重试: {e}")
+                time.sleep(retry_delay)
             else:
-               print(f"获取股票{stock_code}数据最终失败: {e}")
-               return None
+                print(f"❌ 获取全市场数据最终失败: {e}")
+                return None
+
+def get_stock_data_from_market(stock_code, market_df):
+    """从全市场数据中获取单支股票数据"""
+    if market_df is None or market_df.empty:
+        print(f"错误: 全市场数据为空")
+        return None
+    
+    try:
+        # 检查列名
+        if '代码' in market_df.columns:
+            code_col = '代码'
+        elif 'symbol' in market_df.columns:
+            code_col = 'symbol'
+        else:
+            # 尝试查找包含"代码"的列
+            code_col = None
+            for col in market_df.columns:
+                if '代码' in col:
+                    code_col = col
+                    break
+            
+            if not code_col:
+                print(f"错误: 无法识别代码列")
+                return None
+        
+        # 查找股票 - 多种匹配方式
+        # 方法1: 精确匹配
+        stock_data = market_df[market_df[code_col].astype(str).str.strip() == stock_code]
+        
+        if stock_data.empty:
+            # 方法2: 去除可能的字母前缀后匹配
+            codes_clean = market_df[code_col].astype(str).str.strip()
+            codes_clean = codes_clean.str.replace(r'^[a-zA-Z]+', '', regex=True)
+            stock_data = market_df[codes_clean == stock_code]
+        
+        if stock_data.empty:
+            # 方法3: 包含匹配
+            stock_data = market_df[market_df[code_col].astype(str).str.contains(stock_code)]
+        
+        if not stock_data.empty:
+            stock = stock_data.iloc[0]
+            
+            # 列名映射
+            column_mapping = {
+                'code': ['代码', 'symbol', 'code'],
+                'name': ['名称', 'name'],
+                'price': ['最新价', 'current', 'price'],
+                'change': ['涨跌幅', '涨跌%', 'pct_chg'],
+                'change_amount': ['涨跌额', 'change'],
+                'volume': ['成交量', 'volume', 'vol'],
+                'turnover': ['成交额', 'amount'],
+                'high': ['最高', 'high'],
+                'low': ['最低', 'low'],
+                'open': ['今开', 'open'],
+                'close': ['昨收', 'pre_close']
+            }
+            
+            result = {'code': stock_code}
+            for field, possible_columns in column_mapping.items():
+                value_found = None
+                for col in possible_columns:
+                    if col in market_df.columns:
+                        value_found = stock[col]
+                        break
+                
+                if value_found is not None:
+                    result[field] = value_found
+                else:
+                    result[field] = 0
+            
+            # 确保名称字段
+            if 'name' not in result or not result['name'] or result['name'] == 0:
+                result['name'] = stock_code
+            
+            print(f"✅ 成功获取股票 {stock_code} 数据: {result.get('name', '未知')}")
+            return result
+        
+        print(f"⚠️ 未找到股票 {stock_code} 的数据")
+        return None
+        
+    except Exception as e:
+        print(f"❌ 获取股票{stock_code}数据失败: {e}")
+        return None
 
 def analyze_with_deepseek(stock_data, historical_data):
     """使用DeepSeek分析股票数据"""
@@ -165,9 +182,9 @@ def analyze_with_deepseek(stock_data, historical_data):
             "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
             "Content-Type": "application/json"
         }
-         # "model": "deepseek-chat",
+        
         data = {
-           "model": "deepseek-v4-pro",
+            "model": "deepseek-chat",  # 使用稳定的模型名称
             "messages": [
                 {
                     "role": "system",
@@ -204,7 +221,6 @@ def generate_html_report(stock_reports):
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>股票分析报告 - {beijing_time}</title>
-    <link rel="stylesheet" href="style.css">
     <style>
         body {{
             font-family: 'Microsoft YaHei', Arial, sans-serif;
@@ -295,6 +311,9 @@ def generate_html_report(stock_reports):
             color: #7f8c8d;
             font-size: 0.9em;
         }}
+        .error-card {{
+            border-left-color: #e74c3c;
+        }}
         @media (max-width: 768px) {{
             body {{ padding: 10px; }}
             .stock-header {{ flex-direction: column; text-align: center; }}
@@ -325,8 +344,18 @@ def generate_html_report(stock_reports):
     return html_template
 
 def generate_stock_reports():
-    """生成所有股票的报告"""
+    """生成所有股票的报告 - 优化版本（只获取一次全市场数据）"""
     reports = []
+    
+    print("开始获取全市场股票数据...")
+    market_df = get_market_data()
+    
+    if market_df is None or market_df.empty:
+        print("❌ 获取全市场数据失败，无法生成报告")
+        return "<div class='stock-card'><h3>❌ 数据获取失败，请检查网络或数据源</h3></div>"
+    
+    success_count = 0
+    fail_count = 0
     
     for stock_info in YOUR_STOCKS:
         stock_code = stock_info['code']
@@ -334,20 +363,42 @@ def generate_stock_reports():
         
         print(f"分析 {stock_name}({stock_code})...")
         
-        # 获取实时数据
-        stock_data = get_stock_data(stock_code)
+        # 从全市场数据中获取单支股票数据
+        stock_data = get_stock_data_from_market(stock_code, market_df)
+        
         if not stock_data:
+            fail_count += 1
+            error_html = f"""
+    <div class="stock-card error-card">
+        <div class="stock-header">
+            <div class="stock-name">{stock_name} ({stock_code}) ❌</div>
+            <div class="price-info">
+                <div style="color: #e74c3c;">数据获取失败</div>
+            </div>
+        </div>
+        <div class="ai-analysis">
+            <strong>⚠️ 数据获取异常:</strong><br>
+            当前无法获取该股票的实时数据，请检查股票代码或稍后重试。
+        </div>
+    </div>
+"""
+            reports.append(error_html)
             continue
         
         # AI分析
-        ai_analysis = analyze_with_deepseek(stock_data, None)
-        time.sleep(1)  # 避免API限制
+        try:
+            ai_analysis = analyze_with_deepseek(stock_data, None)
+            time.sleep(1)  # 避免API限制
+        except Exception as e:
+            ai_analysis = f"AI分析异常: {str(e)}"
+            time.sleep(1)
         
         # 确定涨跌样式
-        if stock_data['change'] > 0:
+        change = stock_data.get('change', 0)
+        if change > 0:
             change_class = "change-up"
             change_icon = "📈"
-        elif stock_data['change'] < 0:
+        elif change < 0:
             change_class = "change-down"
             change_icon = "📉"
         else:
@@ -360,9 +411,9 @@ def generate_stock_reports():
         <div class="stock-header">
             <div class="stock-name">{stock_name} ({stock_code}) {change_icon}</div>
             <div class="price-info">
-                <div class="current-price {change_class}">{stock_data['price']} 元</div>
+                <div class="current-price {change_class}">{stock_data.get('price', 0)} 元</div>
                 <div class="change-percent {change_class}">
-                    {stock_data['change']:+.2f}% ({stock_data['change_amount']:+.2f}元)
+                    {change:+.2f}% ({stock_data.get('change_amount', 0):+.2f}元)
                 </div>
             </div>
         </div>
@@ -370,19 +421,19 @@ def generate_stock_reports():
         <div class="stats-grid">
             <div class="stat-item">
                 <div class="stat-label">开盘价</div>
-                <div class="stat-value">{stock_data['open']} 元</div>
+                <div class="stat-value">{stock_data.get('open', 0)} 元</div>
             </div>
             <div class="stat-item">
                 <div class="stat-label">最高价</div>
-                <div class="stat-value">{stock_data['high']} 元</div>
+                <div class="stat-value">{stock_data.get('high', 0)} 元</div>
             </div>
             <div class="stat-item">
                 <div class="stat-label">最低价</div>
-                <div class="stat-value">{stock_data['low']} 元</div>
+                <div class="stat-value">{stock_data.get('low', 0)} 元</div>
             </div>
             <div class="stat-item">
                 <div class="stat-label">成交量</div>
-                <div class="stat-value">{stock_data['volume']}</div>
+                <div class="stat-value">{stock_data.get('volume', 0)}</div>
             </div>
         </div>
         
@@ -393,6 +444,12 @@ def generate_stock_reports():
     </div>
 """
         reports.append(stock_html)
+        success_count += 1
+    
+    print(f"✅ 分析完成: 成功 {success_count} 支，失败 {fail_count} 支")
+    
+    if not reports:
+        return "<div class='stock-card'><h3>❌ 所有股票数据获取失败，请检查网络或数据源</h3></div>"
     
     return "".join(reports)
 
@@ -441,7 +498,7 @@ def send_wechat_message(message, title="股票分析报告"):
         return False
 
 def main():
-    print("🚀 股票分析脚本启动 - GitHub Pages版本")
+    print("🚀 股票分析脚本启动 - GitHub Pages版本（优化版）")
     
     try:
         beijing_time = format_beijing_time()
@@ -455,7 +512,7 @@ def main():
         full_html = generate_html_report(stock_reports_html)
         
         # 保存HTML文件
-        html_filename = f"stock_report_{get_beijing_time().strftime('%Y%m%d_%H%M%S')}.html"
+        html_filename = "stock_report.html"
         with open(html_filename, 'w', encoding='utf-8') as f:
             f.write(full_html)
         print(f"✅ HTML报告已保存: {html_filename}")
@@ -470,6 +527,7 @@ def main():
         
     except Exception as e:
         print(f"❌ 脚本执行异常: {e}")
+        traceback.print_exc()
         return 1
 
 if __name__ == "__main__":
