@@ -1,534 +1,275 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-GitHub Actions股票分析脚本 - GitHub Pages版本
-优化版本：只获取一次全市场数据
-生成HTML报告并自动部署
-"""
-
-import os
-import sys
-import json
-import requests
-import pandas as pd
 import akshare as ak
-from datetime import datetime, timedelta
-import traceback
+import pandas as pd
 import time
 import random
+import requests
+import json
+import os
+import sys
+import traceback
+from datetime import datetime
 
-# 配置参数
-WECHAT_TOKEN = os.getenv('WECHAT_TOKEN', '')
-DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
-GITHUB_REPOSITORY = os.getenv('GITHUB_REPOSITORY', 'your-username/your-repo')
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+# ====================== 配置参数 ======================
+YOUR_STOCKS = ["000001", "002594", "603688", "002475", "601318", "000400"]  # 你的股票代码列表
+WECHAT_TOKEN = os.getenv("WECHAT_TOKEN")  # 微信推送Token（可选）
+LLM_API_KEY = os.getenv("LLM_API_KEY")    # 大模型API Key（如智谱AI）
+LLM_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"  # 智谱AI接口（可替换）
 
-# 监控的股票列表
-YOUR_STOCKS = [
-    {'code': '000001', 'name': '平安银行'},
-    {'code': '002594', 'name': '比亚迪'},
-    {'code': '603688', 'name': '石英股份'},
-    {'code': '002475', 'name': '立讯精密'},
-    {'code': '601318', 'name': '中国平安'},
-    {'code': '000400', 'name': '许继电器'}
-]
-
-def get_beijing_time():
-    """获取北京时间（UTC+8）"""
-    utc_now = datetime.utcnow()
-    beijing_time = utc_now + timedelta(hours=8)
-    return beijing_time
-
-def format_beijing_time(format_str='%Y-%m-%d %H:%M:%S'):
-    """格式化北京时间"""
-    return get_beijing_time().strftime(format_str)
+# ====================== 工具函数 ======================
+def format_beijing_time():
+    """格式化北京时间为字符串"""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def get_market_data():
-    """获取全市场股票数据（只调用一次）"""
+    """获取全市场实时数据（带重试和随机延时，避免反爬）"""
     max_retries = 3
     retry_delay = 2
-    
     for attempt in range(max_retries):
         try:
-            # 随机延时，避免触发反爬机制
+            # 随机延时1-3秒，降低请求频率
             time.sleep(random.uniform(1, 3))
-            
-            # 获取全市场数据
             df = ak.stock_zh_a_spot()
-            print(f"✅ 成功获取全市场数据，共 {len(df)} 支股票")
-            
-            # 调试：打印列名
-            print(f"列名: {df.columns.tolist()}")
-            
+            print(f"✅ 成功获取全市场数据，共 {len(df)} 条，列名：{df.columns.tolist()}")
             return df
         except Exception as e:
+            print(f"❌ 第{attempt+1}次获取全市场数据失败：{e}")
             if attempt < max_retries - 1:
-                print(f"第{attempt+1}次获取全市场数据失败，{retry_delay}秒后重试: {e}")
                 time.sleep(retry_delay)
-            else:
-                print(f"❌ 获取全市场数据最终失败: {e}")
-                return None
+    print("❌ 全市场数据获取失败，终止程序")
+    return None
 
-def get_stock_data_from_market(stock_code, market_df):
-    """从全市场数据中获取单支股票数据"""
+def find_stock_in_market(market_df, stock_code):
+    """在全市场数据中查找股票（支持多种代码格式匹配）"""
     if market_df is None or market_df.empty:
-        print(f"错误: 全市场数据为空")
         return None
     
-    try:
-        # 检查列名
-        if '代码' in market_df.columns:
-            code_col = '代码'
-        elif 'symbol' in market_df.columns:
-            code_col = 'symbol'
-        else:
-            # 尝试查找包含"代码"的列
-            code_col = None
-            for col in market_df.columns:
-                if '代码' in col:
-                    code_col = col
-                    break
-            
-            if not code_col:
-                print(f"错误: 无法识别代码列")
-                return None
-        
-        # 查找股票 - 多种匹配方式
-        # 方法1: 精确匹配
-        stock_data = market_df[market_df[code_col].astype(str).str.strip() == stock_code]
-        
-        if stock_data.empty:
-            # 方法2: 去除可能的字母前缀后匹配
-            codes_clean = market_df[code_col].astype(str).str.strip()
-            codes_clean = codes_clean.str.replace(r'^[a-zA-Z]+', '', regex=True)
-            stock_data = market_df[codes_clean == stock_code]
-        
-        if stock_data.empty:
-            # 方法3: 包含匹配
-            stock_data = market_df[market_df[code_col].astype(str).str.contains(stock_code)]
-        
-        if not stock_data.empty:
-            stock = stock_data.iloc[0]
-            
-            # 列名映射
-            column_mapping = {
-                'code': ['代码', 'symbol', 'code'],
-                'name': ['名称', 'name'],
-                'price': ['最新价', 'current', 'price'],
-                'change': ['涨跌幅', '涨跌%', 'pct_chg'],
-                'change_amount': ['涨跌额', 'change'],
-                'volume': ['成交量', 'volume', 'vol'],
-                'turnover': ['成交额', 'amount'],
-                'high': ['最高', 'high'],
-                'low': ['最低', 'low'],
-                'open': ['今开', 'open'],
-                'close': ['昨收', 'pre_close']
-            }
-            
-            result = {'code': stock_code}
-            for field, possible_columns in column_mapping.items():
-                value_found = None
-                for col in possible_columns:
-                    if col in market_df.columns:
-                        value_found = stock[col]
-                        break
-                
-                if value_found is not None:
-                    result[field] = value_found
-                else:
-                    result[field] = 0
-            
-            # 确保名称字段
-            if 'name' not in result or not result['name'] or result['name'] == 0:
-                result['name'] = stock_code
-            
-            print(f"✅ 成功获取股票 {stock_code} 数据: {result.get('name', '未知')}")
-            return result
-        
-        print(f"⚠️ 未找到股票 {stock_code} 的数据")
-        return None
-        
-    except Exception as e:
-        print(f"❌ 获取股票{stock_code}数据失败: {e}")
-        return None
+    # 生成可能的代码格式（如000001 -> 000001.SZ）
+    possible_codes = [
+        stock_code,                  # 原始格式（如000001）
+        f"{stock_code}.SZ",          # 深交所（如000001.SZ）
+        f"{stock_code}.SH",          # 上交所（如600000.SH）
+        stock_code.lstrip("0")       # 去除前导零（如000001 -> 1）
+    ]
+    
+    # 遍历所有可能的代码格式匹配
+    for code in possible_codes:
+        mask = market_df["代码"] == code
+        if mask.any():
+            stock_data = market_df[mask].iloc[0].to_dict()
+            print(f"✅ 找到股票 {stock_code}（匹配格式：{code}）：{stock_data.get('名称')}")
+            return stock_data
+    
+    # 尝试模糊匹配（代码包含在数据中）
+    for _, row in market_df.iterrows():
+        market_code = str(row["代码"])
+        if stock_code in market_code or market_code in stock_code:
+            print(f"✅ 模糊匹配到股票 {stock_code}：{row.get('名称')}")
+            return row.to_dict()
+    
+    print(f"❌ 未找到股票 {stock_code} 的数据（全市场数据长度：{len(market_df)}）")
+    return None
 
-def analyze_with_deepseek(stock_data, historical_data):
-    """使用DeepSeek分析股票数据"""
-    if not DEEPSEEK_API_KEY:
-        return "DeepSeek API密钥未配置，跳过AI分析"
+def get_ai_analysis(stock_data):
+    """调用大模型生成股票分析（带调试信息）"""
+    if not LLM_API_KEY:
+        print("⚠️ 未配置LLM_API_KEY，跳过AI分析")
+        return "（未配置AI接口，无法生成分析）"
+    
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {LLM_API_KEY}"
+    }
+    
+    # 构造Prompt（可根据需求调整）
+    prompt = f"请分析股票 {stock_data.get('代码')}（{stock_data.get('名称')}）的当前行情：\n"
+    prompt += f"价格：{stock_data.get('最新价')}元，涨跌幅：{stock_data.get('涨跌幅')}%，成交量：{stock_data.get('成交量')}\n"
+    prompt += "请给出简短的投资建议或行情解读（不超过100字）。"
+    
+    payload = {
+        "model": "glm-4",  # 可替换为其他模型（如glm-3-turbo）
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 150,
+        "temperature": 0.7
+    }
     
     try:
-        analysis_prompt = f"""
-请作为专业股票分析师，对以下股票进行技术分析：
-
-股票信息：
-- 股票代码：{stock_data['code']}
-- 股票名称：{stock_data['name']}
-- 当前价格：{stock_data['price']}元
-- 涨跌幅：{stock_data['change']}%
-- 涨跌额：{stock_data['change_amount']}元
-
-请从以下角度进行分析：
-1. 当前技术面状况
-2. 短期走势预测
-3. 关键支撑位和阻力位
-4. 交易建议（买入/持有/卖出）
-5. 风险提示
-
-要求分析简洁专业，不超过200字。
-"""
-        
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        data = {
-            "model": "deepseek-chat",  # 使用稳定的模型名称
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "你是一个专业的股票分析师，擅长技术分析和市场趋势判断。请用中文回答，分析要客观专业。"
-                },
-                {
-                    "role": "user",
-                    "content": analysis_prompt
-                }
-            ],
-            "temperature": 0.7,
-            "max_tokens": 1000
-        }
-        
-        response = requests.post(DEEPSEEK_API_URL, headers=headers, 
-                                json=data, timeout=60)
-        response.raise_for_status()
-        
+        response = requests.post(LLM_API_URL, headers=headers, json=payload, timeout=15)
+        response.raise_for_status()  # 检查HTTP错误（如401、500）
         result = response.json()
-        analysis = result['choices'][0]['message']['content']
-        return analysis.strip()
         
-    except Exception as e:
-        return f"AI分析暂时不可用: {str(e)}"
+        # 增加响应结构调试打印
+        print(f"🔍 AI接口原始响应：{json.dumps(result, ensure_ascii=False)[:500]}...")
+        
+        # 解析响应（适配智谱AI格式）
+        if "choices" in result and len(result["choices"]) > 0:
+            content = result["choices"][0]["message"]["content"]
+            print(f"✅ AI分析生成成功：{content[:50]}...")
+            return content.strip()
+        else:
+            print(f"⚠️ AI响应无有效内容，原始响应：{result}")
+            return "（AI分析生成失败，响应格式错误）"
+    except requests.exceptions.RequestException as e:
+        print(f"❌ AI分析请求异常：{e}")
+        return f"（AI分析请求失败：{str(e)})"
+    except (KeyError, IndexError) as e:
+        print(f"❌ AI响应解析失败：{e}，原始响应：{response.text[:500]}")
+        return "（AI分析解析失败，请联系管理员）"
 
-def generate_html_report(stock_reports):
-    """生成HTML格式的报告"""
-    beijing_time = format_beijing_time()
-    
-    html_template = f"""
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>股票分析报告 - {beijing_time}</title>
-    <style>
-        body {{
-            font-family: 'Microsoft YaHei', Arial, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }}
-        .header {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            text-align: center;
-        }}
-        .stock-card {{
-            background: white;
-            border-radius: 10px;
-            padding: 25px;
-            margin: 20px 0;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            border-left: 5px solid #3498db;
-        }}
-        .stock-header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }}
-        .stock-name {{
-            font-size: 1.4em;
-            font-weight: bold;
-            color: #2c3e50;
-        }}
-        .price-info {{
-            text-align: right;
-        }}
-        .current-price {{
-            font-size: 1.8em;
-            font-weight: bold;
-        }}
-        .change-up {{ color: #e74c3c; }}
-        .change-down {{ color: #27ae60; }}
-        .change-neutral {{ color: #95a5a6; }}
-        .change-percent {{
-            font-size: 1.2em;
-            font-weight: bold;
-        }}
-        .stats-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin: 15px 0;
-        }}
-        .stat-item {{
-            background: #f8f9fa;
-            padding: 10px;
-            border-radius: 5px;
-            text-align: center;
-        }}
-        .stat-label {{
-            font-size: 0.9em;
-            color: #7f8c8d;
-        }}
-        .stat-value {{
-            font-weight: bold;
-            color: #2c3e50;
-        }}
-        .ai-analysis {{
-            background: #e8f4fd;
-            border-left: 4px solid #3498db;
-            padding: 15px;
-            margin: 15px 0;
-            border-radius: 5px;
-        }}
-        .timestamp {{
-            text-align: center;
-            color: #7f8c8d;
-            margin: 30px 0;
-            font-size: 0.9em;
-        }}
-        .footer {{
-            text-align: center;
-            margin-top: 40px;
-            padding: 20px;
-            border-top: 1px solid #ddd;
-            color: #7f8c8d;
-            font-size: 0.9em;
-        }}
-        .error-card {{
-            border-left-color: #e74c3c;
-        }}
-        @media (max-width: 768px) {{
-            body {{ padding: 10px; }}
-            .stock-header {{ flex-direction: column; text-align: center; }}
-            .price-info {{ text-align: center; margin-top: 10px; }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>📊 股票分析报告</h1>
-        <p>生成时间: {beijing_time} (北京时间)</p>
-        <p>分析股票数: {len(YOUR_STOCKS)} 支</p>
-    </div>
-
-    {stock_reports}
-
-    <div class="timestamp">
-        最后更新时间: {beijing_time}
-    </div>
-    
-    <div class="footer">
-        <p>本报告由AI自动生成，仅供参考，不构成投资建议</p>
-        <p>数据来源: Akshare | 分析引擎: DeepSeek AI</p>
-    </div>
-</body>
-</html>
-"""
-    return html_template
-
-def generate_stock_reports():
-    """生成所有股票的报告 - 优化版本（只获取一次全市场数据）"""
+def generate_stock_reports(market_df):
+    """生成所有股票的分析报告（带调试信息）"""
     reports = []
-    
-    print("开始获取全市场股票数据...")
-    market_df = get_market_data()
-    
-    if market_df is None or market_df.empty:
-        print("❌ 获取全市场数据失败，无法生成报告")
-        return "<div class='stock-card'><h3>❌ 数据获取失败，请检查网络或数据源</h3></div>"
-    
     success_count = 0
     fail_count = 0
     
-    for stock_info in YOUR_STOCKS:
-        stock_code = stock_info['code']
-        stock_name = stock_info['name']
-        
-        print(f"分析 {stock_name}({stock_code})...")
-        
-        # 从全市场数据中获取单支股票数据
-        stock_data = get_stock_data_from_market(stock_code, market_df)
-        
+    for stock_code in YOUR_STOCKS:
+        print(f"\n===== 处理股票：{stock_code} =====")
+        # 1. 从全市场数据查找股票
+        stock_data = find_stock_in_market(market_df, stock_code)
         if not stock_data:
             fail_count += 1
-            error_html = f"""
-    <div class="stock-card error-card">
-        <div class="stock-header">
-            <div class="stock-name">{stock_name} ({stock_code}) ❌</div>
-            <div class="price-info">
-                <div style="color: #e74c3c;">数据获取失败</div>
+            # 生成错误卡片（避免页面空白）
+            error_card = f"""
+            <div class="stock-card error">
+                <h3>❌ 股票 {stock_code} 数据获取失败</h3>
+                可能原因：代码错误、数据源无此股票、网络波动
             </div>
-        </div>
-        <div class="ai-analysis">
-            <strong>⚠️ 数据获取异常:</strong><br>
-            当前无法获取该股票的实时数据，请检查股票代码或稍后重试。
-        </div>
-    </div>
-"""
-            reports.append(error_html)
+            """
+            reports.append(error_card)
             continue
         
-        # AI分析
-        try:
-            ai_analysis = analyze_with_deepseek(stock_data, None)
-            time.sleep(1)  # 避免API限制
-        except Exception as e:
-            ai_analysis = f"AI分析异常: {str(e)}"
-            time.sleep(1)
+        # 2. 获取AI分析
+        ai_analysis = get_ai_analysis(stock_data)
         
-        # 确定涨跌样式
-        change = stock_data.get('change', 0)
-        if change > 0:
-            change_class = "change-up"
-            change_icon = "📈"
-        elif change < 0:
-            change_class = "change-down"
-            change_icon = "📉"
-        else:
-            change_class = "change-neutral"
-            change_icon = "➡️"
+        # 3. 生成股票卡片（即使AI分析为空，也保留基础数据）
+        price = stock_data.get("最新价", 0)
+        change = stock_data.get("涨跌幅", 0)
+        change_class = "up" if change > 0 else "down"
         
-        # 生成单个股票的HTML
         stock_html = f"""
-    <div class="stock-card">
-        <div class="stock-header">
-            <div class="stock-name">{stock_name} ({stock_code}) {change_icon}</div>
-            <div class="price-info">
-                <div class="current-price {change_class}">{stock_data.get('price', 0)} 元</div>
-                <div class="change-percent {change_class}">
-                    {change:+.2f}% ({stock_data.get('change_amount', 0):+.2f}元)
-                </div>
+        <div class="stock-card">
+            <h3>{stock_data.get('名称', stock_code)} ({stock_code})</h3>
+            <div class="price-change {change_class}">
+                {price:.2f}元 <span class="change">{change:+.2f}%</span>
+            </div>
+            <div class="stats">
+                成交量：{stock_data.get('成交量', 0)} | 成交额：{stock_data.get('成交额', 0)}
+                最高：{stock_data.get('最高', 0)} | 最低：{stock_data.get('最低', 0)}
+            </div>
+            <div class="ai-analysis">
+                <strong>🤖 AI分析：</strong>
+                {ai_analysis or "（AI分析为空，请联系管理员）"}
             </div>
         </div>
-        
-        <div class="stats-grid">
-            <div class="stat-item">
-                <div class="stat-label">开盘价</div>
-                <div class="stat-value">{stock_data.get('open', 0)} 元</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">最高价</div>
-                <div class="stat-value">{stock_data.get('high', 0)} 元</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">最低价</div>
-                <div class="stat-value">{stock_data.get('low', 0)} 元</div>
-            </div>
-            <div class="stat-item">
-                <div class="stat-label">成交量</div>
-                <div class="stat-value">{stock_data.get('volume', 0)}</div>
-            </div>
-        </div>
-        
-        <div class="ai-analysis">
-            <strong>🤖 AI分析:</strong><br>
-            {ai_analysis.replace(chr(10), '<br>')}
-        </div>
-    </div>
-"""
+        """
         reports.append(stock_html)
         success_count += 1
+        print(f"✅ 股票 {stock_code} 处理完成")
     
-    print(f"✅ 分析完成: 成功 {success_count} 支，失败 {fail_count} 支")
-    
-    if not reports:
-        return "<div class='stock-card'><h3>❌ 所有股票数据获取失败，请检查网络或数据源</h3></div>"
-    
+    print(f"\n===== 统计：成功 {success_count} 支，失败 {fail_count} 支 =====")
     return "".join(reports)
 
-def send_wechat_message(message, title="股票分析报告"):
-    """发送微信消息（包含网页链接）"""
+def generate_html_report(stock_reports):
+    """生成最终HTML报告（含基础CSS样式）"""
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <title>股票分析报告 - {format_beijing_time()}</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                margin: 20px;
+                line-height: 1.6;
+            }}
+            .stock-card {{
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                padding: 16px;
+                margin-bottom: 16px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }}
+            .stock-card.error {{
+                background-color: #fff3f3;
+                border-color: #ffcccc;
+            }}
+            .price-change {{
+                font-size: 24px;
+                font-weight: bold;
+                margin: 8px 0;
+            }}
+            .up {{ color: red; }}
+            .down {{ color: green; }}
+            .stats {{
+                color: #666;
+                margin: 8px 0;
+            }}
+            .ai-analysis {{
+                margin-top: 12px;
+                padding-top: 12px;
+                border-top: 1px dashed #eee;
+                white-space: pre-line; /* 保留换行 */
+            }}
+            h3 {{
+                margin: 0 0 8px;
+                color: #333;
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>股票分析报告（{format_beijing_time()}）</h1>
+        {stock_reports}
+        <p style="margin-top: 20px; color: #999; font-size: 14px;">
+            报告生成时间：{format_beijing_time()} | 数据来源：AkShare
+        
+    </body>
+    </html>
+    """
+    return html
+
+def send_wechat_message(message):
+    """发送微信通知（Server酱/企业微信，需配置WECHAT_TOKEN）"""
     if not WECHAT_TOKEN:
-        print("微信Token未配置，跳过推送")
         return False
-    
     try:
-        # 构建GitHub Pages链接
-        repo_name = GITHUB_REPOSITORY.split('/')[1]
-        pages_url = f"https://{GITHUB_REPOSITORY.split('/')[0]}.github.io/{repo_name}/"
-        
-        beijing_time = format_beijing_time('%H:%M')
-        
-        # 创建包含链接的消息
-        link_message = f"""
-{message}
-
-📊 完整报告已发布到网页版：
-🔗 {pages_url}
-
-⏰ 更新时间: {beijing_time} (北京时间)
-"""
-        
-        url = "http://www.pushplus.plus/send"
-        data = {
-            "token": WECHAT_TOKEN.strip(),
-            "title": f"股票分析报告 {beijing_time}",
-            "content": link_message.replace('\n', '<br>'),
-            "template": "html"
-        }
-        
-        response = requests.post(url, json=data, timeout=15)
-        
-        if response.status_code == 200:
-            result = response.json()
-            if result.get('code') == 200:
-                print("✅ 微信消息发送成功！")
-                return True
-        return False
-        
+        url = f"https://sctapi.ftqq.com/{WECHAT_TOKEN}.send"
+        data = {"title": "股票分析完成", "desp": message}
+        response = requests.post(url, data=data, timeout=10)
+        return response.json().get("code") == 0
     except Exception as e:
-        print(f"发送消息异常: {e}")
+        print(f"微信通知发送失败：{e}")
         return False
 
 def main():
-    print("🚀 股票分析脚本启动 - GitHub Pages版本（优化版）")
-    
+    print("🚀 股票分析脚本启动（优化版）")
     try:
-        beijing_time = format_beijing_time()
-        print(f"当前北京时间: {beijing_time}")
+        # 1. 获取全市场数据
+        market_df = get_market_data()
+        if market_df is None:
+            return 1
         
-        # 生成股票报告
-        print("开始生成股票分析...")
-        stock_reports_html = generate_stock_reports()
+        # 2. 生成股票报告
+        stock_reports = generate_stock_reports(market_df)
         
-        # 生成完整HTML报告
-        full_html = generate_html_report(stock_reports_html)
+        # 3. 生成HTML并保存
+        html_content = generate_html_report(stock_reports)
+        filename = "stock_report.html"
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        print(f"✅ HTML报告已保存：{filename}")
         
-        # 保存HTML文件
-        html_filename = "stock_report.html"
-        with open(html_filename, 'w', encoding='utf-8') as f:
-            f.write(full_html)
-        print(f"✅ HTML报告已保存: {html_filename}")
-        
-        # 发送微信通知
+        # 4. 微信通知（可选）
         if WECHAT_TOKEN:
-            summary = f"✅ 股票分析完成！共分析 {len(YOUR_STOCKS)} 支股票"
-            send_wechat_message(summary)
+            msg = f"股票分析完成！成功 {len([s for s in YOUR_STOCKS if find_stock_in_market(market_df, s)])} 支，失败 {len(YOUR_STOCKS) - len([s for s in YOUR_STOCKS if find_stock_in_market(market_df, s)])} 支"
+            send_wechat_message(msg)
         
         print("✅ 脚本执行完成！")
         return 0
-        
     except Exception as e:
-        print(f"❌ 脚本执行异常: {e}")
+        print(f"❌ 脚本执行异常：{e}")
         traceback.print_exc()
         return 1
 
 if __name__ == "__main__":
     sys.exit(main())
+
