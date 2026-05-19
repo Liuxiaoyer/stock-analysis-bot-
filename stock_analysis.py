@@ -48,15 +48,10 @@ def get_stock_data(stock_code):
     
     for attempt in range(max_retries):
         #try:
-            # 方法1: 尝试新版接口
-            #try:
-               # df = ak.stock_zh_a_spot_em()
-               # print(f"尝试使用 stock_zh_a_spot_em() 接口...")
-           # except Exception as e1:
-            #    print(f"接口1失败: {e1}")
-                # 方法2: 备用接口
-                df = ak.stock_zh_a_spot()
-                print(f"回退到 stock_zh_a_spot() 接口...")
+        
+            # 方法2: 备用接口
+            df = ak.stock_zh_a_spot()
+            print(f"回退到 stock_zh_a_spot() 接口...")
             
             # 检查列名，处理可能的列名差异
             if '代码' in df.columns:
@@ -132,13 +127,13 @@ def get_stock_data(stock_code):
                 
             return None
             
-        #except Exception as e:
-         #   if attempt < max_retries - 1:
-          #      print(f"第{attempt+1}次获取股票{stock_code}数据失败，{retry_delay}秒后重试: {e}")
-           #     time.sleep(retry_delay)
-          #  else:
-           #     print(f"获取股票{stock_code}数据最终失败: {e}")
-            #    return None
+        except Exception as e:
+            if attempt < max_retries - 1:
+               print(f"第{attempt+1}次获取股票{stock_code}数据失败，{retry_delay}秒后重试: {e}")
+               time.sleep(retry_delay)
+            else:
+               print(f"获取股票{stock_code}数据最终失败: {e}")
+               return None
 
 def analyze_with_deepseek(stock_data, historical_data):
     """使用DeepSeek分析股票数据"""
