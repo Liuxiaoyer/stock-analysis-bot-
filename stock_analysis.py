@@ -184,7 +184,8 @@ def analyze_with_deepseek(stock_data, historical_data):
         }
         
         data = {
-           "model": "deepseek-chat",  # 使用稳定的模型名称
+           #"model": "deepseek-chat",  # 使用稳定的模型名称
+            "model": "deepseek-v4-pro",  # 使用v4模型名称
             "messages": [
                 {
                     "role": "system",
