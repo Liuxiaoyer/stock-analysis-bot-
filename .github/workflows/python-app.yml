@@ -29,7 +29,7 @@ jobs:
       - name: 安装依赖
         run: |
           pip install requests pandas akshare
-
+          pip install baostock
       - name: 运行分析脚本
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
