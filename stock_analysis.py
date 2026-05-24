@@ -14,6 +14,8 @@ import akshare as ak
 from datetime import datetime, timedelta
 import traceback
 import time
+import subprocess
+
 
 # 配置参数
 WECHAT_TOKEN = os.getenv('WECHAT_TOKEN', '')
@@ -42,6 +44,13 @@ def format_beijing_time(format_str='%Y-%m-%d %H:%M:%S'):
     """格式化北京时间"""
     return get_beijing_time().strftime(format_str)
 
+def log_error(message):
+    """记录错误日志"""
+    beijing_time = format_beijing_time()
+    with open("error.log", "a", encoding='utf-8') as f:
+        f.write(f"[{beijing_time}] {message}\n")
+    print(f"错误: {message}")
+
 def get_market_data():
     """获取全市场股票数据"""
     max_retries = 3
@@ -66,7 +75,104 @@ def get_market_data():
             else:
                 print(f"获取全市场数据最终失败: {e}")
                 return None
-
+                
+def batch_get_historical_data(stock_list, days=5):
+    """
+    使用 Baostock 批量获取多只股票的历史数据
+    返回一个字典 {code: dataframe}
+    """
+    import baostock as bs
+    
+    historical_dict = {}
+    
+    # 计算日期范围
+    end_date = get_beijing_time().strftime('%Y-%m-%d')
+    start_date = (get_beijing_time() - timedelta(days=days)).strftime('%Y-%m-%d')
+    
+    print(f"\n📥 开始批量获取历史数据 ({start_date} ~ {end_date})...")
+    
+    # 登录 Baostock（必须步骤，免费无需密码）
+    lg = bs.login()
+    if lg.error_code != '0':
+        print(f"❌ Baostock 登录失败: {lg.error_msg}")
+        return historical_dict
+    
+    for stock_info in stock_list:
+        stock_code = stock_info['code']
+        stock_name = stock_info['name']
+        
+        # Baostock 的股票代码格式：sh.600000 或 sz.000001
+        if stock_code.startswith('6'):
+            bs_code = f"sh.{stock_code}"
+        else:
+            bs_code = f"sz.{stock_code}"
+        
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                print(f"  ⏳ 正在获取 {stock_name}({stock_code})... (尝试 {attempt+1})")
+                
+                # 调用 Baostock 接口
+                # adjustflag: "1"=后复权, "2"=前复权, "3"=不复权
+                rs = bs.query_history_k_data_plus(
+                    bs_code,
+                    "date,code,open,high,low,close,preclose,volume,amount,turn,pctChg",
+                    start_date=start_date,
+                    end_date=end_date,
+                    frequency="d",      # d=日线
+                    adjustflag="2"       # 2=前复权（与你的 qfq 一致）
+                )
+                
+                # 将结果转换为 DataFrame
+                data_list = []
+                while rs.error_code == '0' and rs.next():
+                    data_list.append(rs.get_row_data())
+                
+                if data_list:
+                    df = pd.DataFrame(data_list, columns=rs.fields)
+                    
+                    # 将数据列转换为数值类型
+                    numeric_cols = ['open', 'high', 'low', 'close', 'preclose', 'volume', 'amount', 'turn', 'pctChg']
+                    for col in numeric_cols:
+                        if col in df.columns:
+                            df[col] = pd.to_numeric(df[col], errors='coerce')
+                    
+                    # 统一列名，与 akshare 返回的格式尽量一致
+                    df = df.rename(columns={
+                        'date': '日期',
+                        'open': '开盘',
+                        'high': '最高',
+                        'low': '最低',
+                        'close': '收盘',
+                        'volume': '成交量',
+                        'amount': '成交额',
+                        'pctChg': '涨跌幅'
+                    })
+                    
+                    historical_dict[stock_code] = df
+                    print(f"  ✅ 获取成功 ({len(df)}条)")
+                else:
+                    print(f"  ⚠️ 数据为空")
+                    historical_dict[stock_code] = None
+                
+                # 成功后休息一下，避免请求过快
+                time.sleep(0.5)
+                break
+                
+            except Exception as e:
+                print(f"  ❌ 失败: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                else:
+                    print(f"  🚫 {stock_name} 历史数据获取失败，跳过")
+                    historical_dict[stock_code] = None
+    
+    # 登出 Baostock
+    bs.logout()
+    
+    print(f"✅ 批量获取完成，成功 {len([v for v in historical_dict.values() if v is not None])} 支")
+    return historical_dict
+ 
 def get_stock_data_from_market(stock_code, market_df):
     """从全市场数据中获取单支股票数据"""
     if market_df is None or market_df.empty:
@@ -157,9 +263,37 @@ def analyze_with_deepseek(stock_data, historical_data):
     if not DEEPSEEK_API_KEY:
         return "DeepSeek API密钥未配置，跳过AI分析"
     
-    try:
+    try:  
+        # ==========================================================
+        # 关键修改：处理历史数据格式，兼容 Baostock
+        # ==========================================================
+        hist_str = "无历史数据"
+        if historical_data is not None and not historical_data.empty:
+            df_hist = historical_data.copy()
+            
+            # 检查是否是 Baostock 格式（包含 'date' 列且没有 '日期' 列）
+            # 如果是，就把英文列名改成中文，以便 Prompt 能看懂
+            if 'date' in df_hist.columns and '日期' not in df_hist.columns:
+                rename_map = {
+                    'date': '日期',
+                    'open': '开盘',
+                    'close': '收盘',
+                    'high': '最高',
+                    'low': '最低',
+                    'volume': '成交量',
+                    'amount': '成交额'
+                }
+                # 只重命名存在的列，防止报错
+                existing_cols = {k: v for k, v in rename_map.items() if k in df_hist.columns}
+                df_hist.rename(columns=existing_cols, inplace=True)
+            
+            # 选取最后5行用于分析
+            hist_str = df_hist.tail(5)[['日期', '开盘', '收盘', '最高', '最低', '成交量']].to_string(index=False)
+        # ==========================================================
+
         analysis_prompt = f"""
 请作为专业股票分析师，对以下股票进行技术分析：
+
 
 股票信息：
 - 股票代码：{stock_data['code']}
@@ -167,17 +301,27 @@ def analyze_with_deepseek(stock_data, historical_data):
 - 当前价格：{stock_data['price']}元
 - 涨跌幅：{stock_data['change']}%
 - 涨跌额：{stock_data['change_amount']}元
+- 成交量：{stock_data['volume']}
+- 成交额：{stock_data['turnover']}元
+- 最高价：{stock_data['high']}元
+- 最低价：{stock_data['low']}元
+- 开盘价：{stock_data['open']}元
+- 昨收价：{stock_data['close']}元
+
+近期走势关键数据（最近5个交易日）：
+{hist_str}
 
 请从以下角度进行分析：
 1. 当前技术面状况
 2. 短期走势预测
 3. 关键支撑位和阻力位
-4. 交易建议（买入/持有/卖出）
-5. 风险提示
+4. 近期公司重要消息
+5. 交易建议（买入/持有/卖出）
+6. 风险提示
 
-要求分析简洁专业，不超过200字。
+要求分析简洁专业，不超过300字。
 """
-        
+           
         headers = {
             "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
             "Content-Type": "application/json"
@@ -349,12 +493,15 @@ def generate_stock_reports():
     """生成所有股票的报告"""
     reports = []
     
-    print("开始获取全市场股票数据...")
+    print("步骤1: 获取全市场实时数据...")
     market_df = get_market_data()
     
     if market_df is None or market_df.empty:
         print("❌ 获取全市场数据失败，无法生成报告")
         return "<div class='stock-card error-card'><h3>❌ 数据获取失败，请检查网络或数据源</h3></div>"
+    # 一次性把所有股票的历史数据拿出来
+    hist_data_dict = batch_get_historical_data(YOUR_STOCKS, days=30)
+    
     
     success_count = 0
     fail_count = 0
@@ -366,8 +513,9 @@ def generate_stock_reports():
         print(f"\n{'='*50}")
         print(f"分析 {stock_name}({stock_code})...")
         
-        # 从全市场数据中获取单支股票数据
+        # 1. 获取实时数据（从之前拿到的全量数据里筛）
         stock_data = get_stock_data_from_market(stock_code, market_df)
+        
         
         if not stock_data:
             fail_count += 1
@@ -389,12 +537,20 @@ def generate_stock_reports():
 """
             reports.append(error_html)
             continue
+        # 2. 获取历史数据（从刚才拿到的字典里直接取，不再请求网络）
+        stock_hist_df = hist_data_dict.get(stock_code)
+        
+        if stock_hist_df is None:
+            print(f"  ⚠️ 未获取到 {stock_name} 的历史数据，将仅做实时分析")
+        
         
         print(f"✅ 成功获取 {stock_name}({stock_code}) 数据，开始AI分析...")
         
-        # AI分析
+        # 3.AI分析
         try:
-            ai_analysis = analyze_with_deepseek(stock_data, None)
+            #ai_analysis = analyze_with_deepseek(stock_data, None)
+            ai_analysis = analyze_with_deepseek(stock_data, stock_hist_df)
+  
             time.sleep(1)  # 避免API限制
         except Exception as e:
             ai_analysis = f"AI分析异常: {str(e)}"
