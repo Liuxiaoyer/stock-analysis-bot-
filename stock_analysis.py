@@ -22,7 +22,7 @@ WECHAT_TOKEN = os.getenv('WECHAT_TOKEN', '')
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
 GITHUB_REPOSITORY = os.getenv('GITHUB_REPOSITORY', 'your-username/your-repo')
 # DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-DEEPSEEK_API_URL = "https://api.deepseek.com"
+DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
 # 监控的股票列表
 YOUR_STOCKS = [
     {'code': '000001', 'name': '平安银行'},
